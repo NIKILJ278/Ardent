@@ -1,0 +1,58 @@
+import os
+from datetime import timedelta
+
+
+class Config:
+    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
+    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret")
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=12)
+    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
+
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///brandstack.db")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+
+    # OAuth app credentials, one block per connector
+    SHOPIFY_API_KEY = os.environ.get("SHOPIFY_API_KEY", "")
+    SHOPIFY_API_SECRET = os.environ.get("SHOPIFY_API_SECRET", "")
+    SHOPIFY_SCOPES = os.environ.get("SHOPIFY_SCOPES", "read_orders,read_products,read_inventory,read_customers")
+    SHOPIFY_REDIRECT_URI = os.environ.get("SHOPIFY_REDIRECT_URI", "")
+
+    META_APP_ID = os.environ.get("META_APP_ID", "")
+    META_APP_SECRET = os.environ.get("META_APP_SECRET", "")
+    META_REDIRECT_URI = os.environ.get("META_REDIRECT_URI", "")
+
+    GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "")
+
+    UNICOMMERCE_API_KEY = os.environ.get("UNICOMMERCE_API_KEY", "")
+    JUDGEME_API_KEY = os.environ.get("JUDGEME_API_KEY", "")
+
+    # Platforms exposed to the frontend connector picker
+    SUPPORTED_CONNECTORS = [
+        "shopify", "meta_ads", "google_ads", "ga4", "instagram",
+        "amazon", "flipkart", "myntra", "unicommerce", "judgeme", "ithink",
+    ]
+
+
+class DevelopmentConfig(Config):
+    DEBUG = True
+
+
+class ProductionConfig(Config):
+    DEBUG = False
+
+
+class TestingConfig(Config):
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+
+
+config_by_name = {
+    "development": DevelopmentConfig,
+    "production": ProductionConfig,
+    "testing": TestingConfig,
+}
