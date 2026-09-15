@@ -1,44 +1,50 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
+import Shell from './components/shell/Shell.jsx';
+import DrilldownPanel from './components/drill/DrilldownPanel.jsx';
 
-import AppLayout from './components/layout/AppLayout';
-import Login from './pages/auth/Login';
-import Register from './pages/auth/Register';
-import Dashboard from './pages/dashboard/Dashboard';
-import ChannelProfitability from './pages/analytics/ChannelProfitability';
-import Waterfall from './pages/analytics/Waterfall';
-import SkuPareto from './pages/analytics/SkuPareto';
-import RtoByState from './pages/analytics/RtoByState';
-import Campaigns from './pages/analytics/Campaigns';
-import Customers from './pages/analytics/Customers';
-import Inventory from './pages/analytics/Inventory';
-import Connectors from './pages/connectors/Connectors';
-import AskAnalyst from './pages/ai/AskAnalyst';
-import Reports from './pages/reports/Reports';
-import Alerts from './pages/alerts/Alerts';
+import Overview from './pages/Overview.jsx';
+import Sales from './pages/Sales.jsx';
+import Ads from './pages/Ads.jsx';
+import Finance from './pages/Finance.jsx';
+import Goals from './pages/Goals.jsx';
+import Reconciliation from './pages/Reconciliation.jsx';
+import DataSources from './pages/DataSources.jsx';
+import Reports from './pages/Reports.jsx';
+import SkuMaster from './pages/SkuMaster.jsx';
+import Gst from './pages/Gst.jsx';
+import Inventory from './pages/Inventory.jsx';
+import Watchlist from './pages/Watchlist.jsx';
+import Settings from './pages/Settings.jsx';
+import {
+  People, Insights, Customers, Marketing, Help,
+} from './pages/Simple.jsx';
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-
-      <Route element={<AppLayout />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/analytics/channels" element={<ChannelProfitability />} />
-        <Route path="/analytics/waterfall" element={<Waterfall />} />
-        <Route path="/analytics/skus" element={<SkuPareto />} />
-        <Route path="/analytics/rto" element={<RtoByState />} />
-        <Route path="/analytics/campaigns" element={<Campaigns />} />
-        <Route path="/analytics/customers" element={<Customers />} />
-        <Route path="/analytics/inventory" element={<Inventory />} />
-        <Route path="/connectors" element={<Connectors />} />
-        <Route path="/ai" element={<AskAnalyst />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/alerts" element={<Alerts />} />
-      </Route>
-
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <Shell>
+      <Routes>
+        <Route path="/"               element={<Navigate to="/overview" replace />} />
+        <Route path="/overview"       element={<Overview />} />
+        <Route path="/sales"          element={<Sales />} />
+        <Route path="/ads"            element={<Ads />} />
+        <Route path="/finance"        element={<Finance />} />
+        <Route path="/goals"          element={<Goals />} />
+        <Route path="/watchlist"      element={<Watchlist />} />
+        <Route path="/people"         element={<People />} />
+        <Route path="/reconciliation" element={<Reconciliation />} />
+        <Route path="/sources"        element={<DataSources />} />
+        <Route path="/inventory" element={<Inventory />} />
+        <Route path="/gst" element={<Gst />} />
+        <Route path="/sku-master" element={<SkuMaster />} />
+        <Route path="/reports"        element={<Reports />} />
+        <Route path="/settings"       element={<Settings />} />
+        <Route path="/help"           element={<Help />} />
+        <Route path="/customers"      element={<Customers />} />
+        <Route path="/marketing"      element={<Marketing />} />
+        <Route path="/insights"       element={<Insights />} />
+        <Route path="*"               element={<Navigate to="/overview" replace />} />
+      </Routes>
+      <DrilldownPanel />
+    </Shell>
   );
 }

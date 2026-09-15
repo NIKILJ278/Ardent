@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke": "vite build --ssr smoke.jsx --outDir dist-ssr --logLevel error && node dist-ssr/smoke.js",
+    "domtest": "vite build --ssr domtest.jsx --outDir dist-dom --logLevel error && node dist-dom/domtest.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -23,6 +25,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
+    "jsdom": "^29.1.1",
     "oxlint": "^1.79.0",
     "vite": "^8.2.2"
   }
