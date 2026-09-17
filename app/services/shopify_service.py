@@ -6,6 +6,15 @@ GraphQL.
 
 Money is read in shop currency (`shopMoney`), so a storefront that sells in
 several currencies still reconciles to the merchant's own books.
+
+Three ways to hold a token:
+
+- OAuth install: the store approves the app and the offline token is kept on
+  the connection (the original flow, unchanged).
+- Client ID and secret typed into the dashboard: exchanged with the client
+  credentials grant for a 24-hour token, renewed automatically. Shopify only
+  allows this when the app and the store belong to the same organization.
+- An Admin API access token (`shpat_…`) from an existing custom app.
 """
 import hashlib
 import hmac
@@ -18,6 +27,7 @@ from flask import current_app
 
 from app.extensions import db
 from app.models import Order, OrderItem, ReturnRecord
+from app.services import http
 from app.services.base_connector import BaseConnector
 
 
@@ -232,16 +242,70 @@ class ShopifyConnector(BaseConnector):
         self.connection.last_error = None
         return {"scope": data.get("scope")}
 
+    # Credentials ------------------------------------------------------------
+
+    def _token(self):
+        """The access token for this store, whichever way it was connected."""
+        c = self.credentials
+        if c.get("admin_api_token"):
+            return c["admin_api_token"]
+        if c.get("client_id") and c.get("client_secret"):
+            expires = c.get("_token_expires")
+            if c.get("_token") and expires and datetime.fromisoformat(expires) > datetime.now(timezone.utc):
+                return c["_token"]
+            return self._client_credentials_token()
+        return self.connection.access_token
+
+    def _client_credentials_token(self):
+        shop = normalise_shop(self.connection.external_account_id or self.credentials.get("shop"))
+        if not shop:
+            raise ShopifyError("Enter the store's myshopify.com domain")
+        try:
+            resp = http.request(
+                "POST", f"https://{shop}/admin/oauth/access_token", platform="Shopify",
+                auth_statuses=(400, 401, 403),
+                data={
+                    "grant_type": "client_credentials",
+                    "client_id": self.credentials["client_id"],
+                    "client_secret": self.credentials["client_secret"],
+                },
+            )
+        except http.ConnectorAuthError as exc:
+            raise ShopifyAuthError(
+                "Shopify refused the client ID and secret. The client credentials grant only works "
+                "when the app and the store are in the same Shopify organization; otherwise paste "
+                "an Admin API access token or use Connect store."
+            ) from exc
+        body = http.json_of(resp, "Shopify")
+        token = body.get("access_token")
+        if not token:
+            raise ShopifyAuthError("Shopify did not return an access token")
+        lifetime = int(body.get("expires_in") or 86399)
+        expires = datetime.now(timezone.utc).timestamp() + lifetime - 300
+        self.remember(
+            _token=token,
+            _token_expires=datetime.fromtimestamp(expires, tz=timezone.utc).isoformat(),
+        )
+        self.connection.scopes = body.get("scope") or self.connection.scopes
+        return token
+
+    def test_connection(self):
+        """Read the shop profile with the typed credentials."""
+        profile = self.fetch_shop_profile()
+        shop = normalise_shop(self.connection.external_account_id or self.credentials.get("shop"))
+        return {"account_id": shop, "display_name": profile.get("name") or shop, **profile}
+
     # Transport --------------------------------------------------------------
 
     def _graphql(self, query, variables=None, attempts=6):
-        shop = normalise_shop(self.connection.external_account_id)
-        if not shop or not self.connection.access_token:
+        shop = normalise_shop(self.connection.external_account_id or self.credentials.get("shop"))
+        token = self._token() if shop else None
+        if not shop or not token:
             raise ShopifyAuthError("This store is not connected")
         version = current_app.config["SHOPIFY_API_VERSION"]
         url = f"https://{shop}/admin/api/{version}/graphql.json"
         headers = {
-            "X-Shopify-Access-Token": self.connection.access_token,
+            "X-Shopify-Access-Token": token,
             "Content-Type": "application/json",
         }
 
@@ -254,6 +318,10 @@ class ShopifyConnector(BaseConnector):
                 time.sleep(float(resp.headers.get("Retry-After", 2)))
                 continue
             if resp.status_code in (401, 403):
+                if self.credentials.get("client_secret") and self.credentials.get("_token"):
+                    self.remember(_token=None, _token_expires=None)
+                    headers["X-Shopify-Access-Token"] = self._token()
+                    continue
                 raise ShopifyAuthError("Shopify rejected the access token; reconnect the store")
             if resp.status_code == 404:
                 raise ShopifyError(
@@ -431,6 +499,9 @@ class ShopifyConnector(BaseConnector):
         gateways = " ".join(node.get("paymentGatewayNames") or []).lower()
 
         order.order_date = _parse_time(node.get("createdAt")) or datetime.now(timezone.utc)
+        order.order_name = node.get("name")
+        # Shopify's Orders API carries no marketplace fee: known to be none.
+        order.marketplace_fee_known = True
         order.currency = node.get("currencyCode")
         presentment_total, presentment_currency = _presentment(node.get("totalPriceSet"))
         order.presentment_currency = presentment_currency or node.get("presentmentCurrencyCode")

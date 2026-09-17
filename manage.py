@@ -1,5 +1,5 @@
 # usage:
-#   python manage.py init-db          create any missing tables
+#   python manage.py init-db          create any missing tables and columns
 #   python manage.py reset-db --yes   drop every table and start empty
 #
 # There is no demo seed. Every figure in Ardent comes from a connected source.
@@ -10,9 +10,11 @@ from app.extensions import db
 
 def init_db():
     app = create_app()
+    from app.schema import upgrade
+
     with app.app_context():
-        db.create_all()
-        print("Tables created.")
+        added = upgrade()
+        print("Tables created." + (f" Added columns: {', '.join(added)}" if added else ""))
 
 
 def reset_db(confirmed):

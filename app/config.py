@@ -47,11 +47,18 @@ class Config:
     UNICOMMERCE_API_KEY = os.environ.get("UNICOMMERCE_API_KEY", "")
     JUDGEME_API_KEY = os.environ.get("JUDGEME_API_KEY", "")
 
-    # Platforms exposed to the frontend connector picker
-    SUPPORTED_CONNECTORS = [
-        "shopify", "meta_ads", "google_ads", "ga4", "instagram",
-        "amazon", "flipkart", "myntra", "unicommerce", "judgeme", "ithink",
-    ]
+    # Encrypts the platform keys users enter on the website. Falls back to
+    # SECRET_KEY; changing whichever is in use means re-entering every key.
+    CREDENTIALS_KEY = os.environ.get("CREDENTIALS_KEY", "")
+
+    # API versions that platforms retire on a schedule. Override in .env when
+    # a platform announces a sunset, without a code change.
+    META_GRAPH_VERSION = os.environ.get("META_GRAPH_VERSION", "v25.0")
+    GOOGLE_ADS_API_VERSION = os.environ.get("GOOGLE_ADS_API_VERSION", "v25")
+    CASHFREE_API_VERSION = os.environ.get("CASHFREE_API_VERSION", "2026-01-01")
+
+    # Report uploads (Myntra, Meesho, PhonePe …) are read in memory.
+    MAX_CONTENT_LENGTH = 26 * 1024 * 1024
 
 
 class DevelopmentConfig(Config):

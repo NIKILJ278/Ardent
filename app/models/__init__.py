@@ -8,6 +8,7 @@ from app.models.customer import Customer
 from app.models.return_model import ReturnRecord
 from app.models.report import SavedReport
 from app.models.alert import Alert
+from app.models.finance import ConnectionSecret, PaymentTransaction, Settlement, Shipment
 
 __all__ = [
     "User",
@@ -22,4 +23,8 @@ __all__ = [
     "ReturnRecord",
     "SavedReport",
     "Alert",
+    "ConnectionSecret",
+    "PaymentTransaction",
+    "Settlement",
+    "Shipment",
 ]

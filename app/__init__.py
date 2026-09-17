@@ -22,12 +22,33 @@ def create_app(env=None):
 
     register_blueprints(app)
     register_error_handlers(app)
+    upgrade_schema(app)
 
     @app.get("/health")
     def health():
         return {"status": "ok", "service": "brandstack-backend"}
 
     return app
+
+
+def upgrade_schema(app):
+    """Add any tables or columns the models gained since the database was made.
+
+    A failure here is logged rather than raised: a database that is briefly
+    unreachable should not stop the server from starting.
+    """
+    if not app.config.get("AUTO_UPGRADE_SCHEMA", True):
+        return
+    from app.schema import upgrade
+
+    with app.app_context():
+        try:
+            added = upgrade()
+            if added:
+                app.logger.info("Database upgraded: added %s", ", ".join(added))
+        except Exception as exc:  # noqa: BLE001
+            db.session.rollback()
+            app.logger.error("Could not upgrade the database schema: %s", exc)
 
 
 def register_blueprints(app):

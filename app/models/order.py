@@ -37,6 +37,17 @@ class Order(db.Model):
     tax_amount = db.Column(db.Float, default=0.0)
     refunded_amount = db.Column(db.Float, default=0.0)
     marketplace_fee_amount = db.Column(db.Float, default=0.0)  # commission etc.
+    # Whether the fee above was actually reported. 0.0 alone cannot tell
+    # "free" from "the source does not say", and the dashboard must not
+    # present an unreported fee as zero.
+    marketplace_fee_known = db.Column(db.Boolean, default=False)
+    # The number a person would quote: "#1001" on Shopify, the order ID on a
+    # marketplace. Shipping aggregators store this, not the platform's
+    # internal ID, so it is how a parcel finds its order.
+    order_name = db.Column(db.String(255), index=True)
+    # What the courier charged for this order, forward plus any COD and
+    # return-to-origin charge. Null until a shipping source has billed it.
+    shipping_cost_amount = db.Column(db.Float)
     net_amount = db.Column(db.Float, default=0.0)  # gross - discounts - refunded merchandise
 
     cogs_amount = db.Column(db.Float, default=0.0)  # cost of goods sold
@@ -87,6 +98,9 @@ class Order(db.Model):
             "is_rto": self.is_rto,
             "is_cancelled": self.is_cancelled,
             "is_returned": self.is_returned,
+            "order_name": self.order_name,
+            "marketplace_fee_amount": self.marketplace_fee_amount if self.marketplace_fee_known else None,
+            "shipping_cost_amount": self.shipping_cost_amount,
         }
 
 
