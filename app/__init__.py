@@ -12,7 +12,10 @@ def create_app(env=None):
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
-    cors.init_app(app, resources={r"/api/*": {"origins": "*"}})
+    # Only the dashboard may call the API from a browser. A wildcard origin let
+    # any site a signed-in user visited read brand data with their token.
+    origins = [o.strip() for o in app.config["FRONTEND_URL"].split(",") if o.strip()]
+    cors.init_app(app, resources={r"/api/*": {"origins": origins}})
 
     # Import models so Flask-Migrate/SQLAlchemy sees every table.
     from app import models  # noqa: F401
@@ -36,7 +39,13 @@ def register_blueprints(app):
     from app.api.reports import reports_bp
     from app.api.alerts import alerts_bp
     from app.api.ai import ai_bp
+    from app.api.shopify_oauth import shopify_oauth_bp
+    from app.api.facts import facts_bp
 
+    # Full paths live on the routes themselves: the callback URL is fixed by the
+    # Shopify app's configuration and must not move under a brand prefix.
+    app.register_blueprint(shopify_oauth_bp)
+    app.register_blueprint(facts_bp, url_prefix="/api/brands/<brand_id>/facts")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(brands_bp, url_prefix="/api/brands")
     app.register_blueprint(connectors_bp, url_prefix="/api/brands/<brand_id>/connectors")

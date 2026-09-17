@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Card, Segmented, Delta } from '../ui/index.jsx';
+import { NotConnected } from '../ui/NotConnected.jsx';
 import { revenueSplit } from '../../data/ads.js';
 import { CHANNEL_BY_ID } from '../../data/catalog.js';
-import { inr, pct } from '../../lib/format.js';
+import { money, pct, currencySymbol } from '../../lib/format.js';
 
 const STREAM_COLOR = {
+  all: 'var(--series-1)',
   organic: 'var(--series-1)',
   ads: 'var(--series-2)',
   course: 'var(--series-3)',
@@ -15,10 +15,10 @@ const STREAM_COLOR = {
 /**
  * Where revenue actually comes from.
  *
- * One stacked bar rather than three cards, because the question is about
- * proportion — a CEO wants to see at a glance whether the business is bought
- * or earned. The ₹ and % toggle changes the labels, never the bar, so the
- * shape of the mix stays comparable across both readings.
+ * Splitting organic from ad-driven revenue needs each order credited to a
+ * campaign, which only an ad platform can supply. Until one is connected there
+ * is one honest bucket — all of it — and the attribution gap is stated rather
+ * than filled with a modelled share.
  */
 export function RevenueSplit({ scope, prevScope, channels, channelId, onChannel }) {
   const [mode, setMode] = useState('value');
@@ -37,29 +37,27 @@ export function RevenueSplit({ scope, prevScope, channels, channelId, onChannel 
       title="Revenue split"
       subtitle="Where the revenue actually comes from"
       actions={
-        <span className="hstack" style={{ gap: 8 }}>
-          <Segmented
-            options={[{ id: 'value', label: '₹' }, { id: 'pct', label: '%' }]}
-            value={mode} onChange={setMode} size="sm"
-          />
-          <Link to="/ads" className="linkish">Ads detail <ArrowRight size={13} /></Link>
-        </span>
+        <Segmented
+          options={[{ id: 'value', label: currencySymbol() }, { id: 'pct', label: '%' }]}
+          value={mode} onChange={setMode} size="sm"
+        />
       }
     >
-      {/* The channel selector belongs to this question, so it sits with it. */}
-      <div className="rs-channels">
-        {options.map(o => (
-          <button
-            key={o.id} type="button"
-            className={`chip${channelId === o.id ? ' active' : ''}`}
-            onClick={() => onChannel(o.id)}
-          >{o.label}</button>
-        ))}
-      </div>
+      {options.length > 2 && (
+        <div className="rs-channels">
+          {options.map(o => (
+            <button
+              key={o.id} type="button"
+              className={`chip${channelId === o.id ? ' active' : ''}`}
+              onClick={() => onChannel(o.id)}
+            >{o.label}</button>
+          ))}
+        </div>
+      )}
 
       <div className="rs-total">
         <span className="tiny muted">Total revenue</span>
-        <span className="rs-total-value tnum">{inr(split.total)}</span>
+        <span className="rs-total-value tnum">{money(split.total)}</span>
         {totalChange != null && <Delta value={totalChange} />}
       </div>
 
@@ -68,8 +66,8 @@ export function RevenueSplit({ scope, prevScope, channels, channelId, onChannel 
           <span
             key={r.id}
             className="rs-seg"
-            style={{ width: `${r.pct}%`, background: STREAM_COLOR[r.id] }}
-            title={`${r.label} ${inr(r.value)} (${pct(r.pct)})`}
+            style={{ width: `${r.pct}%`, background: STREAM_COLOR[r.id] ?? 'var(--series-1)' }}
+            title={`${r.label} ${money(r.value)} (${pct(r.pct)})`}
           />
         ))}
       </div>
@@ -78,35 +76,37 @@ export function RevenueSplit({ scope, prevScope, channels, channelId, onChannel 
         {split.rows.map(r => (
           <div className="rs-row" key={r.id}>
             <span className="hstack" style={{ gap: 8, minWidth: 0 }}>
-              <span className="swatch" style={{ background: STREAM_COLOR[r.id] }} />
+              <span className="swatch" style={{ background: STREAM_COLOR[r.id] ?? 'var(--series-1)' }} />
               <span style={{ minWidth: 0 }}>
                 <span className="rs-label">{r.label}</span>
                 <span className="tiny muted" style={{ display: 'block' }}>{r.blurb}</span>
               </span>
             </span>
             <span className="rs-figures">
-              <span className="rs-value tnum">{mode === 'value' ? inr(r.value) : pct(r.pct)}</span>
+              <span className="rs-value tnum">{mode === 'value' ? money(r.value) : pct(r.pct)}</span>
               <span className="tiny muted tnum">
-                {mode === 'value' ? pct(r.pct) : inr(r.value)}
+                {mode === 'value' ? pct(r.pct) : money(r.value)}
               </span>
             </span>
             <span className="rs-delta">
               {r.change == null ? <span className="tiny muted">—</span> : <Delta value={r.change} />}
-              {r.prevPct != null && (
-                <span className="tiny muted" style={{ display: 'block' }}>
-                  was {pct(r.prevPct)}
-                </span>
-              )}
             </span>
           </div>
         ))}
       </div>
 
-      <div className="ladder-foot">
-        Ad-driven revenue is the slice a campaign was credited with inside its attribution
-        window, not revenue added on top. Organic is the remainder, so the three always sum to
-        total revenue. Spend behind the ad slice was {inr(split.adSpend)}.
-      </div>
+      {!split.attributed && (
+        <div style={{ marginTop: 12 }}>
+          <NotConnected
+            title="Organic, ad-driven and course revenue"
+            needs="Meta Ads, Google Ads or another ad platform"
+            compact
+          >
+            Attribution has to come from the platform that ran the campaign. Splitting this total
+            without it would be a guess dressed as a measurement.
+          </NotConnected>
+        </div>
+      )}
     </Card>
   );
 }

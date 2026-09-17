@@ -31,6 +31,9 @@ def list_connectors(brand_id, role):
 def get_authorize_url(brand_id, role, platform):
     if platform not in CONNECTOR_REGISTRY:
         return error(f"Unsupported platform '{platform}'", status=400)
+    if platform == "shopify":
+        # Shopify needs a store domain and a verified callback; it has its own flow.
+        return error("Start a Shopify install with POST /api/brands/<brand_id>/shopify/start", status=400)
 
     state = f"{brand_id}:{uuid.uuid4()}"
     stub_connection = Connection(brand_id=brand_id, platform=platform, status="pending")
@@ -45,6 +48,10 @@ def oauth_callback(brand_id, role, platform):
     # exchanges the code from the OAuth redirect for tokens and upserts the connection
     if platform not in CONNECTOR_REGISTRY:
         return error(f"Unsupported platform '{platform}'", status=400)
+    if platform == "shopify":
+        # This route never checked Shopify's HMAC, so it could exchange a forged
+        # code. Shopify installs complete only through the verified callback.
+        return error("Shopify installs complete through /api/connectors/shopify/callback", status=400)
 
     data = request.get_json(force=True) or {}
     code = data.get("code")

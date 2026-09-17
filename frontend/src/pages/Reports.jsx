@@ -10,7 +10,7 @@ import { fmtDate, periodLabel, periodRange, periodDays, num } from '../lib/forma
 import { Card, Pill, DataTable, Segmented } from '../components/ui/index.jsx';
 import { PeriodPicker } from '../components/shell/Shell.jsx';
 
-const GROUPS = ['All', 'Sales', 'Finance', 'Reconciliation', 'Goals', 'Source Reports'];
+const GROUPS = ['All', 'Sales', 'Finance', 'Goals'];
 
 export default function Reports() {
   const { companyId, period, scope, can, goals } = useApp();

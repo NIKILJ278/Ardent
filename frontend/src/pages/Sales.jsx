@@ -1,28 +1,31 @@
 import { useMemo, useState } from 'react';
-import { ChevronRight, Home, Lock } from 'lucide-react';
+import { ChevronRight, Home, Lock, Plug } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../state/AppState.jsx';
 import { useDrill } from '../state/Drilldown.jsx';
 import {
-  salesModel, groupBy, series, targetFor, budgetFor, forecastFor,
+  salesModel, groupBy, series, skuBreakdown, forecastFor,
   comparisonLabel, isHistoricalComparison,
 } from '../data/engine.js';
 import { salesFlags, worstFlag } from '../data/salesFlags.js';
 import { PERM } from '../state/permissions.js';
-import { CHANNEL_BY_ID, PRODUCT_BY_ID, COMPANY_BY_ID, skusForProduct, channelsFor } from '../data/catalog.js';
-import { inr, num, pct, fmtDate, changePct } from '../lib/format.js';
-import { Card, Delta, DataTable, Segmented, Pill } from '../components/ui/index.jsx';
+import { CHANNEL_BY_ID, PRODUCT_BY_ID, COMPANY_BY_ID, channelsFor } from '../data/catalog.js';
+import { live } from '../data/live.js';
+import { money, num, pct, fmtDate, changePct } from '../lib/format.js';
+import { Card, Delta, DataTable, Segmented, Pill, Empty } from '../components/ui/index.jsx';
+import { NotConnected } from '../components/ui/NotConnected.jsx';
 import { RevenueTrend } from '../components/charts/index.jsx';
-import { Waterfall, Metric, UnitEconomics, FlagRow, MoneyPct, WeeklyProduct } from '../components/sales/Blocks.jsx';
-import { productWeekly } from '../data/inventory.js';
+import {
+  Waterfall, Metric, UnitEconomics, FlagRow, MoneyPct, WeeklySales,
+} from '../components/sales/Blocks.jsx';
 import { MatrixTable } from '../components/sales/MatrixTable.jsx';
 import { RevenueSplit } from '../components/sales/RevenueSplit.jsx';
 import { WatchButton } from '../components/watch/WatchButton.jsx';
 import { SalesToggleSection, MarketplaceEconomics } from '../components/sales/ChannelEconomics.jsx';
 import { channelColor } from '../lib/channels.js';
-import { masterForProduct, LISTING_FORMATS } from '../data/skuMaster.js';
 import { buildEventMarkers } from '../lib/markers.js';
 
-/** Company → Channel → Category → Subcategory → Product → SKU → Transaction. */
+/** Company → Channel → Category → Subcategory → Product → Variant. */
 const LEVELS = [
   { dim: 'channel',     label: 'Channel' },
   { dim: 'category',    label: 'Category' },
@@ -44,9 +47,31 @@ const nameFor = (dim, key) =>
   : dim === 'product' ? (PRODUCT_BY_ID[key]?.name ?? key)
   : key;
 
+function NoSalesYet() {
+  return (
+    <div className="vstack" style={{ gap: 18 }}>
+      <div>
+        <h1 style={{ fontSize: 20 }}>Sales</h1>
+        <p className="muted small" style={{ margin: '3px 0 0' }}>
+          From gross sales to what the company keeps.
+        </p>
+      </div>
+      <Card>
+        <Empty icon={Plug} title="No sales data yet">
+          Connect your store and run a sync — every figure on this page is summed from your own
+          orders.
+          <div style={{ marginTop: 14 }}>
+            <Link to="/sources" className="btn btn-primary">Connect a store</Link>
+          </div>
+        </Empty>
+      </Card>
+    </div>
+  );
+}
+
 export default function Sales() {
   const { scope, prevScope, companyScope, companyId, channelId, setChannelId,
-          comparison, period, can, events, notes } = useApp();
+          comparison, period, can, events, notes, goals, dataVersion } = useApp();
   const { open } = useDrill();
   const [tab, setTab] = useState('performance');
   const [grain, setGrain] = useState('day');
@@ -59,8 +84,16 @@ export default function Sales() {
   const pm = useMemo(() => salesModel(drillPrevScope), [drillPrevScope]);
 
   const growth = changePct(m.netSales, pm.netSales);
-  const target = useMemo(() => targetFor(companyId, m.netSales), [companyId, m.netSales]);
+
+  // A target is something you set on the Goals page, not a multiple of what you
+  // already sold. Without one there is nothing honest to measure against.
+  const netGoal = useMemo(
+    () => goals.find(g => g.company === companyId && g.metric === 'net' && g.targetValue),
+    [goals, companyId]
+  );
+  const target = netGoal ? Number(netGoal.targetValue) : null;
   const achievement = target ? (m.netSales / target) * 100 : null;
+
   const flags = useMemo(
     () => salesFlags(m, { growthPct: growth, achievementPct: achievement, can }),
     [m, growth, achievement, can]
@@ -69,7 +102,7 @@ export default function Sales() {
   const usedDims = new Set(path.map(s => s.dim));
   if (channelId !== 'all') usedDims.add('channel');
   const level = LEVELS.find(l => !usedDims.has(l.dim));
-  const atSku = !level;
+  const atVariant = !level;
 
   /** Rows for the current breakout level, each with the full model. */
   const rows = useMemo(() => {
@@ -99,43 +132,15 @@ export default function Sales() {
         id: r.key, key: r.key, dim: 'channel',
         name: CHANNEL_BY_ID[r.key]?.name ?? r.key,
         color: channelColor(r.key), ...rm, growth: g,
-        target: targetFor(companyId, rm.netSales),
         flag: worstFlag(salesFlags(rm, { growthPct: g, can })),
       };
     });
-  }, [companyScope, prevScope, path, companyId, can]);
+  }, [companyScope, prevScope, path, can]);
 
-  const skuRows = useMemo(() => {
-    const product = PRODUCT_BY_ID[drillScope.product];
-    if (!atSku || !product) return [];
-    // Join to the SKU Master so the row carries its internal code and, when a
-    // single channel is in scope, that channel's own identifier.
-    const master = new Map(masterForProduct(product.id).map(r => [r.variantId, r]));
-    return skusForProduct(product).map(v => ({
-      master: master.get(v.id) ?? null,
-      id: v.id, code: v.code, label: v.label, ratio: v.ratio,
-      units: Math.round(m.units * v.ratio),
-      orders: Math.round(m.orders * v.ratio),
-      grossSales: m.grossSales * v.ratio,
-      netSales: m.netSales * v.ratio,
-      discounts: m.discounts * v.ratio,
-      channelCost: m.channelCost * v.ratio,
-      channelFees: m.channelFees * v.ratio,
-      logistics: m.logistics * v.ratio,
-      cogs: m.cogs * v.ratio,
-      cm1: m.cm1 * v.ratio, cm2: m.cm2 * v.ratio, netMargin: m.netMargin * v.ratio,
-      asp: m.asp, cancelPct: m.cancelPct, returnPct: m.returnPct, rtoPct: m.rtoPct,
-      channelCostPct: m.channelCostPct, cm1Pct: m.cm1Pct, cm2Pct: m.cm2Pct,
-      netMarginPct: m.netMarginPct, channelFeesPct: m.channelFeesPct, logisticsPct: m.logisticsPct,
-    }));
-  }, [atSku, drillScope.product, m]);
-
-  // Weekly detail once the drill has reached a single product.
-  const weekly = useMemo(
-    () => (drillScope.product
-      ? productWeekly({ period, companyId, productId: drillScope.product, channel: drillScope.channel })
-      : null),
-    [period, companyId, drillScope.product, drillScope.channel]
+  // Real variants, each summed from its own order lines.
+  const variantRows = useMemo(
+    () => (atVariant ? skuBreakdown(drillScope) : []),
+    [atVariant, drillScope]
   );
 
   const trend = useMemo(() => {
@@ -145,13 +150,9 @@ export default function Sales() {
     const cur = series(drillScope, grain);
     const prev = series(drillPrevScope, grain);
 
-    // A plan comparison is a flat line, not a historical window — showing last
-    // period's actuals while the control says "Target" would be a lie.
-    const planTotal =
-      comparison === 'target'   ? targetFor(companyId, m.netSales)
-    : comparison === 'budget'   ? budgetFor(companyId, m.netSales)
-    : comparison === 'forecast' ? forecastFor(period, m.netSales)
-    : null;
+    // A forecast is a flat line at the projected run-rate, not last period's
+    // actuals — showing history while the control says "Forecast" would lie.
+    const planTotal = comparison === 'forecast' ? forecastFor(period, m.netSales) : null;
     const perBucket = planTotal != null && cur.length ? planTotal / cur.length : null;
 
     return cur.map((d, i) => ({
@@ -162,7 +163,7 @@ export default function Sales() {
         : perBucket,
       ts: d.ts,
     }));
-  }, [drillScope, drillPrevScope, grain, comparison, companyId, period, m.netSales]);
+  }, [drillScope, drillPrevScope, grain, comparison, period, m.netSales]);
 
   const markers = useMemo(
     () => buildEventMarkers({ events, notes, companyId, channelId, trend, grain }),
@@ -171,13 +172,14 @@ export default function Sales() {
 
   const company = COMPANY_BY_ID[companyId];
   const crumbs = [
-    { label: companyId === 'all' ? 'All Brands' : company?.name ?? 'Company', at: 0 },
+    { label: company?.name ?? 'Company', at: 0 },
     ...path.map((s, i) => ({ label: nameFor(s.dim, s.key), at: i + 1 })),
   ];
+
   /**
    * Push a drill step. The channel table always lists every channel, so
    * re-selecting a dimension already on the path must REPLACE it rather than
-   * stack a second copy — otherwise the breadcrumb reads "Amazon → Amazon".
+   * stack a second copy — otherwise the breadcrumb reads "Shopify → Shopify".
    * Deeper steps are dropped because they belong to the previous selection.
    */
   const drillTo = (r) => setPath(prev => {
@@ -188,6 +190,9 @@ export default function Sales() {
   });
   const sections = SECTIONS.filter(s => can(s.perm));
 
+  void dataVersion;
+  if (!live.rows.length) return <NoSalesYet />;
+
   return (
     <div className="vstack" style={{ gap: 18 }}>
       <div className="spread" style={{ flexWrap: 'wrap', gap: 10 }}>
@@ -196,7 +201,7 @@ export default function Sales() {
           <p className="muted small" style={{ margin: '3px 0 0' }}>
             {can.profit
               ? 'From gross sales to what the company keeps.'
-              : 'Demand, channel performance and what each channel costs to sell through.'}
+              : 'Demand and channel performance.'}
           </p>
         </div>
         <div className="hstack" style={{ gap: 8 }}>
@@ -229,19 +234,22 @@ export default function Sales() {
       <RevenueSplit
         scope={drillScope}
         prevScope={drillPrevScope}
-        channels={companyId === 'all' ? [] : channelsFor(companyId)}
+        channels={channelsFor(companyId)}
         channelId={channelId}
         onChannel={setChannelId}
       />
 
       {/* Headline: what, and is it good */}
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(162px,1fr))' }}>
-        <Metric label="Gross Sales" value={inr(m.grossSales)} delta={changePct(m.grossSales, pm.grossSales)} />
-        <Metric label="Net Sales"   value={inr(m.netSales)}   delta={growth} sub={achievement ? `${pct(achievement, 0)} of target` : null} />
+        <Metric label="Gross Sales" value={money(m.grossSales)} delta={changePct(m.grossSales, pm.grossSales)} />
+        <Metric label="Net Sales"   value={money(m.netSales)}   delta={growth}
+                sub={achievement ? `${pct(achievement, 0)} of your goal` : null} />
         <Metric label="Orders"      value={num(m.orders)}     delta={changePct(m.orders, pm.orders)} />
-        <Metric label="AOV"         value={inr(m.revenuePerOrder)} delta={changePct(m.revenuePerOrder, pm.revenuePerOrder)} />
-        <Metric label="Returns"     value={inr(m.returns)} sub={`${pct(m.returnPct)} of gross`} delta={m.returnPct - pm.returnPct} deltaUnit="pp" invert />
-        <Metric label="Cancellations" value={inr(m.cancellations)} sub={`${pct(m.cancelPct)} of gross`} delta={m.cancelPct - pm.cancelPct} deltaUnit="pp" invert />
+        <Metric label="AOV"         value={money(m.revenuePerOrder)} delta={changePct(m.revenuePerOrder, pm.revenuePerOrder)} />
+        <Metric label="Returns"     value={money(m.returns)} sub={`${pct(m.returnPct)} of gross`}
+                delta={m.returnPct - pm.returnPct} deltaUnit="pp" invert />
+        <Metric label="Cancellations" value={money(m.cancellations)} sub={`${pct(m.cancelPct)} of gross`}
+                delta={m.cancelPct - pm.cancelPct} deltaUnit="pp" invert />
       </div>
 
       {flags.length > 0 && <FlagRow flags={flags} max={4} />}
@@ -262,94 +270,102 @@ export default function Sales() {
       </div>
 
       {tab === 'performance' && (
-        <PerformanceTab m={m} pm={pm} can={can} crumbs={crumbs} target={target} achievement={achievement} />
+        <PerformanceTab m={m} pm={pm} can={can} crumbs={crumbs} target={target}
+                        achievement={achievement} goalName={netGoal?.name} />
       )}
-      {tab === 'channels' && (
-        <ChannelsTab rows={channelRows} onDrill={drillTo} />
-      )}
+      {tab === 'channels' && <ChannelsTab rows={channelRows} onDrill={drillTo} />}
       {tab === 'economics' && (
         <div className="vstack" style={{ gap: 18 }}>
           <SalesToggleSection scope={drillScope} prevScope={drillPrevScope} />
-          <MarketplaceEconomics scope={drillScope} companyChannels={channelsFor(companyId)} />
+          <MarketplaceEconomics />
         </div>
       )}
-      {tab === 'unit' && (
-        <UnitTab m={m} rows={channelRows} can={can} />
-      )}
+      {tab === 'unit' && <UnitTab m={m} can={can} />}
       {tab === 'products' && (
         <div className="vstack" style={{ gap: 14 }}>
           {/* Attribute down the side, periods across — reads far better than a
               single-period list when comparing sizes or lengths. */}
           <MatrixTable scope={drillScope} />
 
-          {weekly && weekly.weeks.length > 0 && (
+          {drillScope.product && (
             <Card
               title="Weekly performance"
-              subtitle={`${weekly.product.name} — sales, ASP, returns and stock in hand by week`}
+              subtitle={`${PRODUCT_BY_ID[drillScope.product]?.name ?? 'Product'} — units, price and returns by week`}
               flush
               actions={
-                <span className="hstack" style={{ gap: 10 }}>
-                  <span className="tiny muted">Closing stock {num(weekly.closingStock)} units</span>
-                  {weekly.weeksStockedOut > 0 && (
-                    <Pill tone="critical">{weekly.weeksStockedOut} week(s) stocked out</Pill>
-                  )}
-                  <WatchButton
-                    subject={{
-                      company: drillScope.company, channel: drillScope.channel,
-                      category: drillScope.category, subcategory: drillScope.subcategory,
-                      product: weekly.product.id, title: weekly.product.name,
-                    }}
-                    label="Watch"
-                  />
-                </span>
+                <WatchButton
+                  subject={{
+                    company: drillScope.company, channel: drillScope.channel,
+                    category: drillScope.category, subcategory: drillScope.subcategory,
+                    product: drillScope.product,
+                    title: PRODUCT_BY_ID[drillScope.product]?.name ?? 'Product',
+                  }}
+                  label="Watch"
+                />
               }
             >
-              <WeeklyProduct data={weekly} />
+              <WeeklySales scope={drillScope} />
             </Card>
           )}
-          {atSku
-            ? <SkuTable rows={skuRows} can={can} onOpen={open} scope={drillScope} />
+
+          {atVariant
+            ? <VariantTable rows={variantRows} onOpen={open} scope={drillScope} />
             : <BreakoutTable level={level} rows={rows} can={can} onDrill={drillTo} />}
         </div>
       )}
-      {tab === 'diagnostics' && (
-        <DiagnosticsTab m={m} pm={pm} rows={channelRows} />
-      )}
+      {tab === 'diagnostics' && <DiagnosticsTab m={m} pm={pm} rows={channelRows} scope={drillScope} />}
     </div>
   );
 }
 
 /* ── Sales Performance ──────────────────────────────────────────────────── */
 
-function PerformanceTab({ m, pm, can, crumbs, target, achievement }) {
+function PerformanceTab({ m, pm, can, crumbs, target, achievement, goalName }) {
   return (
     <div className="grid" style={{ gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)' }}>
-      <Card title="Sales & profitability waterfall" subtitle={crumbs.map(c => c.label).join(' → ')}>
+      <Card title="Sales waterfall" subtitle={crumbs.map(c => c.label).join(' → ')}>
         <Waterfall model={m} can={can} />
       </Card>
       <div className="vstack" style={{ gap: 14 }}>
-        <Card title="Target vs actual" subtitle="Against the period target">
-          <div className="vstack" style={{ gap: 9 }}>
-            {[
-              { l: 'Target', v: inr(target) },
-              { l: 'Actual', v: inr(m.netSales) },
-              { l: 'Variance', v: inr(m.netSales - target), tone: m.netSales >= target ? 'good' : 'critical' },
-            ].map(r => (
-              <div className="spread" key={r.l}>
-                <span className="small muted">{r.l}</span>
-                <span className="tnum" style={{ fontWeight: 600, color: r.tone === 'critical' ? 'var(--critical-ink)' : r.tone === 'good' ? 'var(--good-ink)' : 'var(--ink)' }}>{r.v}</span>
+        <Card title="Against your goal" subtitle={goalName ?? 'Set on the Goals page'}>
+          {target == null ? (
+            <NotConnected
+              title="No net sales goal for this brand"
+              needs="a target on the Goals page"
+              showLink={false}
+              compact
+            >
+              A target has to be something you decided, not a multiple of what you already sold.
+            </NotConnected>
+          ) : (
+            <div className="vstack" style={{ gap: 9 }}>
+              {[
+                { l: 'Target', v: money(target) },
+                { l: 'Actual', v: money(m.netSales) },
+                {
+                  l: 'Variance', v: money(m.netSales - target),
+                  tone: m.netSales >= target ? 'good' : 'critical',
+                },
+              ].map(r => (
+                <div className="spread" key={r.l}>
+                  <span className="small muted">{r.l}</span>
+                  <span className="tnum" style={{
+                    fontWeight: 600,
+                    color: r.tone === 'critical' ? 'var(--critical-ink)' : r.tone === 'good' ? 'var(--good-ink)' : 'var(--ink)',
+                  }}>{r.v}</span>
+                </div>
+              ))}
+              <div className="spread" style={{ paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                <span className="small" style={{ fontWeight: 600 }}>Achievement</span>
+                <span className="tnum" style={{ fontWeight: 700 }}>{pct(achievement ?? 0, 1)}</span>
               </div>
-            ))}
-            <div className="spread" style={{ paddingTop: 9, borderTop: '1px solid var(--border)' }}>
-              <span className="small" style={{ fontWeight: 600 }}>Achievement</span>
-              <span className="tnum" style={{ fontWeight: 700 }}>{pct(achievement ?? 0, 1)}</span>
             </div>
-          </div>
+          )}
         </Card>
         <Card title="Sales quality" subtitle="Per-order shape of demand">
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(104px,1fr))', gap: 10 }}>
             {[
-              { l: 'ASP', v: inr(m.asp), d: changePct(m.asp, pm.asp) },
+              { l: 'ASP', v: money(m.asp), d: changePct(m.asp, pm.asp) },
               { l: 'Units / Order', v: m.unitsPerOrder.toFixed(2), d: changePct(m.unitsPerOrder, pm.unitsPerOrder) },
               { l: 'Units', v: num(m.units), d: changePct(m.units, pm.units) },
               { l: 'Discount %', v: pct(m.discountPct), d: m.discountPct - pm.discountPct },
@@ -367,100 +383,71 @@ function PerformanceTab({ m, pm, can, crumbs, target, achievement }) {
   );
 }
 
-/* ── Channel Performance — how much, where ──────────────────────────────── */
+/* ── Channel Performance ────────────────────────────────────────────────── */
 
 function ChannelsTab({ rows, onDrill }) {
   return (
-    <Card title="Channel performance" subtitle="How much we sell through each channel — select a channel to drill in" flush>
-      <DataTable
-        pageSize={10} searchKeys={['name']}
-        columns={[
-          { key: 'name', label: 'Channel', render: r => (
-            <span className="hstack" style={{ gap: 8 }}>
-              <span className="swatch" style={{ background: r.color }} />
-              <span style={{ fontWeight: 500 }}>{r.name}</span>
-              {r.flag && r.flag.tone !== 'good' && <span title={r.flag.detail}><span className={`dot ${r.flag.tone}`} /></span>}
-            </span>
-          )},
-          { key: 'grossSales', label: 'Gross Sales', align: 'right', render: r => inr(r.grossSales) },
-          { key: 'netSales',   label: 'Net Sales',   align: 'right', render: r => <strong>{inr(r.netSales)}</strong> },
-          { key: 'orders',     label: 'Orders',      align: 'right', render: r => num(r.orders) },
-          { key: 'units',      label: 'Units',       align: 'right', render: r => num(r.units) },
-          { key: 'revenuePerOrder', label: 'AOV',    align: 'right', render: r => inr(r.revenuePerOrder) },
-          { key: 'asp',        label: 'ASP',         align: 'right', render: r => inr(r.asp) },
-          { key: 'cancelPct',  label: 'Cancel %',    align: 'right', render: r => <span style={r.cancelPct > 6 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.cancelPct)}</span> },
-          { key: 'returnPct',  label: 'Return %',    align: 'right', render: r => <span style={r.returnPct > 12 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.returnPct)}</span> },
-          { key: 'rtoPct',     label: 'RTO %',       align: 'right', render: r => pct(r.rtoPct) },
-          { key: 'growth',     label: 'Growth',      align: 'right', render: r => <Delta value={r.growth} /> },
-          { key: 'ach', label: 'vs Target', align: 'right', sortValue: r => (r.target ? (r.netSales / r.target) * 100 : 0),
-            render: r => <span className="tnum">{pct(r.target ? (r.netSales / r.target) * 100 : 0, 0)}</span> },
-          { key: 'go', label: '', sortable: false, align: 'right', render: () => <ChevronRight size={14} className="muted" /> },
-        ]}
-        rows={rows}
-        initialSort={{ key: 'netSales', dir: 'desc' }}
-        onRowClick={onDrill}
-        emptyText="No channel activity in this period"
-      />
-    </Card>
+    <div className="vstack" style={{ gap: 14 }}>
+      <Card title="Channel performance" subtitle="How much sells through each connected channel" flush>
+        <DataTable
+          pageSize={10} searchKeys={['name']}
+          columns={[
+            {
+              key: 'name', label: 'Channel',
+              render: r => (
+                <span className="hstack" style={{ gap: 8 }}>
+                  <span className="swatch" style={{ background: r.color }} />
+                  <span style={{ fontWeight: 500 }}>{r.name}</span>
+                  {r.flag && r.flag.tone !== 'good' && <span title={r.flag.detail}><span className={`dot ${r.flag.tone}`} /></span>}
+                </span>
+              ),
+            },
+            { key: 'grossSales', label: 'Gross Sales', align: 'right', render: r => money(r.grossSales) },
+            { key: 'netSales',   label: 'Net Sales',   align: 'right', render: r => <strong>{money(r.netSales)}</strong> },
+            { key: 'orders',     label: 'Orders',      align: 'right', render: r => num(r.orders) },
+            { key: 'units',      label: 'Units',       align: 'right', render: r => num(r.units) },
+            { key: 'revenuePerOrder', label: 'AOV',    align: 'right', render: r => money(r.revenuePerOrder) },
+            { key: 'asp',        label: 'ASP',         align: 'right', render: r => money(r.asp) },
+            { key: 'cancelPct',  label: 'Cancel %',    align: 'right', render: r => <span style={r.cancelPct > 6 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.cancelPct)}</span> },
+            { key: 'returnPct',  label: 'Return %',    align: 'right', render: r => <span style={r.returnPct > 12 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.returnPct)}</span> },
+            { key: 'growth',     label: 'Growth',      align: 'right', render: r => <Delta value={r.growth} /> },
+            { key: 'go', label: '', sortable: false, align: 'right', render: () => <ChevronRight size={14} className="muted" /> },
+          ]}
+          rows={rows}
+          initialSort={{ key: 'netSales', dir: 'desc' }}
+          onRowClick={onDrill}
+          emptyText="No channel activity in this period"
+        />
+      </Card>
+      <NotConnected
+        title="Channel fees, logistics and realized sales per channel"
+        needs="marketplace, gateway and courier connections"
+      >
+        What each channel costs to sell through cannot be derived from your own store's orders.
+      </NotConnected>
+    </div>
   );
 }
 
-/* ── Unit Economics — overall and per channel, same shape ───────────────── */
+/* ── Unit Economics ─────────────────────────────────────────────────────── */
 
-function UnitTab({ m, rows, can }) {
+function UnitTab({ m, can }) {
   return (
-    <div className="vstack" style={{ gap: 14 }}>
-      <Card title="Unit economics — overall" subtitle="What one order looks like at this level">
-        <UnitEconomics model={m} can={can} />
-      </Card>
-      <Card title="Unit economics by channel" subtitle="The same measures per channel, so they compare directly" flush>
-        <DataTable
-          searchable={false} pageSize={8}
-          columns={[
-            { key: 'name', label: 'Channel', render: r => (
-              <span className="hstack" style={{ gap: 8 }}>
-                <span className="swatch" style={{ background: r.color }} />
-                <span style={{ fontWeight: 500 }}>{r.name}</span>
-              </span>
-            )},
-            { key: 'revenuePerOrder', label: 'Revenue / Order', align: 'right', render: r => inr(r.revenuePerOrder) },
-            { key: 'asp',             label: 'ASP',             align: 'right', render: r => inr(r.asp) },
-            { key: 'unitsPerOrder',   label: 'Units / Order',   align: 'right', render: r => r.unitsPerOrder.toFixed(2) },
-            { key: 'discountPerOrder',label: 'Discount / Order',align: 'right', render: r => inr(r.discountPerOrder) },
-            { key: 'feesPerOrder',    label: 'Fee / Order',     align: 'right', render: r => inr(r.feesPerOrder) },
-            { key: 'logisticsPerOrder', label: 'Logistics / Order', align: 'right', render: r => inr(r.logisticsPerOrder) },
-            { key: 'otherCostPerOrder', label: 'Other / Order', align: 'right', render: r => inr(r.otherCostPerOrder) },
-            { key: 'channelCostPerOrder', label: 'Channel Cost / Order', align: 'right',
-              render: r => <strong className="tnum">{inr(r.channelCostPerOrder)}</strong> },
-            ...(can.profit ? [{
-              key: 'contributionPerOrder', label: 'Contribution / Order', align: 'right',
-              render: r => (
-                <span className="tnum" style={{ fontWeight: 600, color: r.contributionPerOrder >= 0 ? 'var(--good-ink)' : 'var(--critical-ink)' }}>
-                  {inr(r.contributionPerOrder)}
-                </span>
-              ),
-            }] : []),
-          ]}
-          rows={rows}
-          initialSort={{ key: 'channelCostPerOrder', dir: 'desc' }}
-          emptyText="No channels in this period"
-        />
-      </Card>
-    </div>
+    <Card title="Unit economics" subtitle="What one order looks like at this level">
+      <UnitEconomics model={m} can={can} />
+    </Card>
   );
 }
 
 /* ── Product performance — breakout at the current level ────────────────── */
 
 function BreakoutTable({ level, rows, can, onDrill }) {
-  const profitCols = can.profit ? [
-    { key: 'cm1', label: 'CM1', align: 'right', render: r => <MoneyPct v={r.cm1} p={r.cm1Pct} /> },
-    { key: 'cm2', label: 'CM2', align: 'right', render: r => <MoneyPct v={r.cm2} p={r.cm2Pct} /> },
-    { key: 'netMargin', label: 'Net Margin', align: 'right', render: r => (
-      <span className="tnum" style={{ fontWeight: 600, color: r.netMargin >= 0 ? 'var(--good-ink)' : 'var(--critical-ink)' }}>
-        {inr(r.netMargin)} <span className="tiny" style={{ opacity: 0.85 }}>{pct(r.netMarginPct)}</span>
-      </span>
-    )},
+  const showCogs = can(PERM.COGS);
+  const marginCols = showCogs ? [
+    {
+      key: 'grossMargin', label: 'Gross Margin', align: 'right',
+      render: r => <MoneyPct v={r.grossMargin} p={r.grossMarginPct} />,
+    },
   ] : [];
 
   return (
@@ -468,23 +455,25 @@ function BreakoutTable({ level, rows, can, onDrill }) {
       <DataTable
         pageSize={12} searchKeys={['name']}
         columns={[
-          { key: 'name', label: level.label, render: r => (
-            <span className="hstack" style={{ gap: 8 }}>
-              <span className="swatch" style={{ background: r.color }} />
-              <span style={{ fontWeight: 500 }}>{r.name}</span>
-              {r.flag && r.flag.tone !== 'good' && <span title={`${r.flag.label} · ${r.flag.detail}`}><span className={`dot ${r.flag.tone}`} /></span>}
-            </span>
-          )},
-          { key: 'grossSales', label: 'Gross',    align: 'right', render: r => inr(r.grossSales) },
+          {
+            key: 'name', label: level.label,
+            render: r => (
+              <span className="hstack" style={{ gap: 8 }}>
+                <span className="swatch" style={{ background: r.color }} />
+                <span style={{ fontWeight: 500 }}>{r.name}</span>
+                {r.flag && r.flag.tone !== 'good' && <span title={`${r.flag.label} · ${r.flag.detail}`}><span className={`dot ${r.flag.tone}`} /></span>}
+              </span>
+            ),
+          },
+          { key: 'grossSales', label: 'Gross',    align: 'right', render: r => money(r.grossSales) },
           { key: 'orders',     label: 'Orders',   align: 'right', render: r => num(r.orders) },
-          { key: 'revenuePerOrder', label: 'AOV', align: 'right', render: r => inr(r.revenuePerOrder) },
-          { key: 'discountPct',label: 'Disc %',   align: 'right', render: r => pct(r.discountPct) },
+          { key: 'revenuePerOrder', label: 'AOV', align: 'right', render: r => money(r.revenuePerOrder) },
+          { key: 'discountPct', label: 'Disc %',  align: 'right', render: r => pct(r.discountPct) },
           { key: 'cancelPct',  label: 'Cancel %', align: 'right', render: r => pct(r.cancelPct) },
           { key: 'returnPct',  label: 'Return %', align: 'right', render: r => pct(r.returnPct) },
-          { key: 'netSales',   label: 'Net Sales',align: 'right', render: r => <strong>{inr(r.netSales)}</strong> },
-          { key: 'channelCost',label: 'Channel Cost', align: 'right', render: r => <MoneyPct v={r.channelCost} p={r.channelCostPct} /> },
+          { key: 'netSales',   label: 'Net Sales', align: 'right', render: r => <strong>{money(r.netSales)}</strong> },
           { key: 'growth',     label: 'Growth',   align: 'right', render: r => <Delta value={r.growth} /> },
-          ...profitCols,
+          ...marginCols,
           { key: 'go', label: '', sortable: false, align: 'right', render: () => <ChevronRight size={14} className="muted" /> },
         ]}
         rows={rows}
@@ -496,57 +485,43 @@ function BreakoutTable({ level, rows, can, onDrill }) {
   );
 }
 
-function SkuTable({ rows, can, onOpen, scope }) {
-  const scopeChannel = scope.channel ?? null;
-  const profitCols = can.profit ? [
-    { key: 'cm1', label: 'CM1', align: 'right', render: r => <MoneyPct v={r.cm1} p={r.cm1Pct} /> },
-    { key: 'netMargin', label: 'Net Margin', align: 'right', render: r => (
-      <span className="tnum" style={{ fontWeight: 600, color: r.netMargin >= 0 ? 'var(--good-ink)' : 'var(--critical-ink)' }}>
-        {inr(r.netMargin)} <span className="tiny" style={{ opacity: 0.85 }}>{pct(r.netMarginPct)}</span>
-      </span>
-    )},
-  ] : [];
+/** The bottom of the hierarchy: real variants, each with its own figures. */
+function VariantTable({ rows, onOpen, scope }) {
+  const data = rows.map(v => ({
+    ...v,
+    netSales: v.net,
+    asp: v.units ? (v.grossSales - v.discount) / v.units : 0,
+    returnPct: v.grossSales ? (v.returnsValue / v.grossSales) * 100 : 0,
+  }));
 
   return (
-    <Card title="SKU performance" subtitle="The lowest level Ardent holds — select a SKU for its transactions" flush>
+    <Card title="Variant performance" subtitle="Summed from each variant's own order lines" flush>
       <DataTable
         searchable={false} pageSize={12}
         columns={[
-          { key: 'code', label: 'Internal SKU', render: r => (
-            <span>
-              <span className="mono" style={{ fontWeight: 600 }}>{r.master?.sku ?? r.code}</span>
-              {r.master && <span className="tiny muted" style={{ display: 'block' }}>EAN {r.master.ean}</span>}
-            </span>
-          )},
+          { key: 'code', label: 'SKU', render: r => <span className="mono" style={{ fontWeight: 600 }}>{r.code}</span> },
           { key: 'label', label: 'Variant' },
-          { key: 'listing', label: 'Platform ID', sortable: false, render: r => {
-            const ls = r.master ? Object.values(r.master.listings) : [];
-            const one = scopeChannel ? ls.find(l => l.channel === scopeChannel) : null;
-            if (scopeChannel) {
-              return one?.id
-                ? <span className="mono tiny">{one.id}<span className="muted" style={{ marginLeft: 5 }}>{LISTING_FORMATS[one.channel]?.label}</span></span>
-                : <span className="muted tiny">unmapped</span>;
-            }
-            const live = ls.filter(l => l.state !== 'unmapped').length;
-            return <span className="tiny muted">{live}/{ls.length} platforms</span>;
-          }},
           { key: 'units', label: 'Units', align: 'right', render: r => num(r.units) },
-          { key: 'grossSales', label: 'Gross', align: 'right', render: r => inr(r.grossSales) },
-          { key: 'asp',   label: 'ASP',   align: 'right', render: r => inr(r.asp) },
+          { key: 'orders', label: 'Orders', align: 'right', render: r => num(r.orders) },
+          { key: 'grossSales', label: 'Gross', align: 'right', render: r => money(r.grossSales) },
+          { key: 'asp',   label: 'ASP',   align: 'right', render: r => money(r.asp) },
           { key: 'returnPct', label: 'Return %', align: 'right', render: r => pct(r.returnPct) },
-          { key: 'rtoPct',    label: 'RTO %',    align: 'right', render: r => pct(r.rtoPct) },
-          { key: 'netSales',  label: 'Net Sales', align: 'right', render: r => <strong>{inr(r.netSales)}</strong> },
-          { key: 'channelCost', label: 'Channel Cost', align: 'right', render: r => <MoneyPct v={r.channelCost} p={r.channelCostPct} /> },
-          ...profitCols,
+          { key: 'netSales',  label: 'Net Sales', align: 'right', render: r => <strong>{money(r.netSales)}</strong> },
+          {
+            key: 'cogs', label: 'Cost of Goods', align: 'right',
+            render: r => (r.cogs == null
+              ? <span className="tiny muted">no unit cost</span>
+              : <span className="tnum">{money(r.cogs)}</span>),
+          },
           { key: 'go', label: '', sortable: false, align: 'right', render: () => <ChevronRight size={14} className="muted" /> },
         ]}
-        rows={rows}
+        rows={data}
         initialSort={{ key: 'netSales', dir: 'desc' }}
         onRowClick={(r) => onOpen({
           type: 'sku', label: `${r.code} · ${r.label}`, scope,
-          sku: { id: r.id, code: r.code, label: r.label, ratio: r.ratio },
+          sku: { id: r.id, code: r.code, label: r.label },
         })}
-        emptyText="No SKUs for this product"
+        emptyText="No variants sold for this product"
       />
     </Card>
   );
@@ -554,22 +529,18 @@ function SkuTable({ rows, can, onOpen, scope }) {
 
 /* ── Diagnostics — why, not just what ───────────────────────────────────── */
 
-function DiagnosticsTab({ m, pm, rows }) {
-  const returnReasons = [
-    { label: 'Size or fit',        share: 0.34 },
-    { label: 'Damaged in transit', share: 0.19 },
-    { label: 'Not as described',   share: 0.17 },
-    { label: 'Changed mind',       share: 0.16 },
-    { label: 'Wrong item sent',    share: 0.09 },
-    { label: 'Other',              share: 0.05 },
-  ];
-  const cancelReasons = [
-    { label: 'Customer cancelled',   share: 0.41 },
-    { label: 'Payment failed',       share: 0.22 },
-    { label: 'Out of stock',         share: 0.18 },
-    { label: 'Address unserviceable',share: 0.12 },
-    { label: 'Other',                share: 0.07 },
-  ];
+function DiagnosticsTab({ m, pm, rows, scope }) {
+  // Where returns and cancellations actually concentrate, by product.
+  const products = useMemo(() => groupBy(scope, 'product').map(r => ({
+    id: r.key,
+    name: PRODUCT_BY_ID[r.key]?.name ?? r.key,
+    grossSales: r.grossSales,
+    returns: r.returnsValue,
+    returnPct: r.grossSales ? (r.returnsValue / r.grossSales) * 100 : 0,
+    cancellations: r.cancelValue,
+    cancelPct: r.grossSales ? (r.cancelValue / r.grossSales) * 100 : 0,
+    discountPct: r.grossSales ? (r.discount / r.grossSales) * 100 : 0,
+  })), [scope]);
 
   return (
     <div className="vstack" style={{ gap: 14 }}>
@@ -577,10 +548,9 @@ function DiagnosticsTab({ m, pm, rows }) {
         <Card title="Returns" subtitle={`${pct(m.returnPct)} of gross sales · ${pct(m.returnPct - pm.returnPct, 1)}pp vs previous`}>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10, marginBottom: 14 }}>
             {[
-              { l: 'Return value', v: inr(m.customerReturns) },
-              { l: 'RTO value',    v: inr(m.rto) },
-              { l: 'Return %',     v: pct(m.customerReturnPct) },
-              { l: 'RTO %',        v: pct(m.rtoPct) },
+              { l: 'Return value', v: money(m.returns) },
+              { l: 'Return %',     v: pct(m.returnPct) },
+              { l: 'Units returned', v: num(m.returnUnits) },
             ].map(x => (
               <div key={x.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
                 <div className="tiny muted">{x.l}</div>
@@ -588,24 +558,20 @@ function DiagnosticsTab({ m, pm, rows }) {
               </div>
             ))}
           </div>
-          <div className="section-title">Reason mix</div>
-          <div className="vstack" style={{ gap: 8 }}>
-            {returnReasons.map(r => (
-              <div className="bar-row" key={r.label}>
-                <span className="bl">{r.label}</span>
-                <div className="bar-track">
-                  <div className="bar-fill" style={{ width: `${r.share * 100}%`, background: 'var(--series-2)' }} />
-                </div>
-                <span className="bv">{inr(m.returns * r.share)} <span className="muted" style={{ fontWeight: 500 }}>{pct(r.share * 100, 0)}</span></span>
-              </div>
-            ))}
-          </div>
+          <NotConnected
+            title="Why things come back"
+            needs="return reasons from your store's returns app"
+            compact
+          >
+            Shopify's order data records the refund, not the reason. A reason mix would have to be
+            invented.
+          </NotConnected>
         </Card>
 
         <Card title="Cancellations" subtitle={`${pct(m.cancelPct)} of gross sales · ${pct(m.cancelPct - pm.cancelPct, 1)}pp vs previous`}>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(110px,1fr))', gap: 10, marginBottom: 14 }}>
             {[
-              { l: 'Cancelled value', v: inr(m.cancellations) },
+              { l: 'Cancelled value', v: money(m.cancellations) },
               { l: 'Cancel %',        v: pct(m.cancelPct) },
             ].map(x => (
               <div key={x.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
@@ -614,62 +580,76 @@ function DiagnosticsTab({ m, pm, rows }) {
               </div>
             ))}
           </div>
-          <div className="section-title">Reason mix</div>
-          <div className="vstack" style={{ gap: 8 }}>
-            {cancelReasons.map(r => (
-              <div className="bar-row" key={r.label}>
-                <span className="bl">{r.label}</span>
-                <div className="bar-track">
-                  <div className="bar-fill" style={{ width: `${r.share * 100}%`, background: 'var(--series-4)' }} />
-                </div>
-                <span className="bv">{inr(m.cancellations * r.share)} <span className="muted" style={{ fontWeight: 500 }}>{pct(r.share * 100, 0)}</span></span>
-              </div>
-            ))}
-          </div>
+          <NotConnected
+            title="Cancellation reasons and RTO"
+            needs="courier data and cancellation reasons"
+            compact
+          />
         </Card>
       </div>
 
-      <Card title="Discount analysis" subtitle="Who funded the discount changes what it costs the brand">
+      <Card title="Discounting" subtitle="Every discount on your own store is funded by you">
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(132px,1fr))', gap: 10 }}>
           {[
-            { l: 'Total discounts',   v: inr(m.discounts) },
-            { l: 'Discount %',        v: pct(m.discountPct) },
-            { l: 'Discount / Order',  v: inr(m.discountPerOrder) },
-            { l: 'Platform-funded',   v: inr(m.discountPlatform), s: pct(m.platformFundedPct) },
-            { l: 'Brand-funded',      v: inr(m.discountBrand),    s: pct(100 - m.platformFundedPct) },
+            { l: 'Total discounts',  v: money(m.discounts) },
+            { l: 'Discount %',       v: pct(m.discountPct) },
+            { l: 'Discount / Order', v: money(m.discountPerOrder) },
           ].map(x => (
             <div key={x.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
               <div className="tiny muted">{x.l}</div>
               <div className="tnum" style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{x.v}</div>
-              {x.s && <div className="tiny muted">{x.s} of discount</div>}
             </div>
           ))}
         </div>
+        <div className="ladder-foot">
+          Platform-funded discounting only exists on marketplaces, which are not connected.
+        </div>
       </Card>
 
-      <Card title="Where returns and cancellations concentrate" subtitle="By channel — the fastest route to a root cause" flush>
+      <Card title="Where returns and cancellations concentrate" subtitle="By product — the fastest route to a root cause" flush>
         <DataTable
-          searchable={false} pageSize={8}
+          pageSize={10} searchKeys={['name']}
           columns={[
-            { key: 'name', label: 'Channel', render: r => (
-              <span className="hstack" style={{ gap: 8 }}>
-                <span className="swatch" style={{ background: r.color }} />
-                <span style={{ fontWeight: 500 }}>{r.name}</span>
-              </span>
-            )},
+            { key: 'name', label: 'Product', render: r => <span style={{ fontWeight: 500 }}>{r.name}</span> },
+            { key: 'grossSales', label: 'Gross', align: 'right', render: r => money(r.grossSales) },
             { key: 'returnPct', label: 'Return %', align: 'right', render: r => <span style={r.returnPct > 12 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.returnPct)}</span> },
-            { key: 'rtoPct',    label: 'RTO %',    align: 'right', render: r => pct(r.rtoPct) },
+            { key: 'returns',   label: 'Return value', align: 'right', render: r => money(r.returns) },
             { key: 'cancelPct', label: 'Cancel %', align: 'right', render: r => <span style={r.cancelPct > 6 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>{pct(r.cancelPct)}</span> },
+            { key: 'cancellations', label: 'Cancelled value', align: 'right', render: r => money(r.cancellations) },
             { key: 'discountPct', label: 'Discount %', align: 'right', render: r => pct(r.discountPct) },
-            { key: 'platformFundedPct', label: 'Platform-funded', align: 'right', render: r => pct(r.platformFundedPct) },
-            { key: 'returns',   label: 'Return value', align: 'right', render: r => inr(r.returns) },
-            { key: 'cancellations', label: 'Cancelled value', align: 'right', render: r => inr(r.cancellations) },
           ]}
-          rows={rows}
+          rows={products}
           initialSort={{ key: 'returnPct', dir: 'desc' }}
-          emptyText="No channel activity in this period"
+          emptyText="No products sold in this period"
         />
       </Card>
+
+      {rows.length > 1 && (
+        <Card title="By channel" subtitle="The same measures per channel" flush>
+          <DataTable
+            searchable={false} pageSize={8}
+            columns={[
+              {
+                key: 'name', label: 'Channel',
+                render: r => (
+                  <span className="hstack" style={{ gap: 8 }}>
+                    <span className="swatch" style={{ background: r.color }} />
+                    <span style={{ fontWeight: 500 }}>{r.name}</span>
+                  </span>
+                ),
+              },
+              { key: 'returnPct', label: 'Return %', align: 'right', render: r => pct(r.returnPct) },
+              { key: 'cancelPct', label: 'Cancel %', align: 'right', render: r => pct(r.cancelPct) },
+              { key: 'discountPct', label: 'Discount %', align: 'right', render: r => pct(r.discountPct) },
+              { key: 'returns',   label: 'Return value', align: 'right', render: r => money(r.returns) },
+              { key: 'cancellations', label: 'Cancelled value', align: 'right', render: r => money(r.cancellations) },
+            ]}
+            rows={rows}
+            initialSort={{ key: 'returnPct', dir: 'desc' }}
+            emptyText="No channel activity in this period"
+          />
+        </Card>
+      )}
     </div>
   );
 }

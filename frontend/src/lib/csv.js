@@ -5,7 +5,7 @@
 // came from, so a file that does not say what window it covers is worse than no
 // file at all — someone will read it as current.
 
-import { iso, fmtDate } from './format.js';
+import { iso, fmtDate, currencyCode } from './format.js';
 
 const esc = (v) => {
   const s = v == null ? '' : String(v);
@@ -20,7 +20,7 @@ export function rangeSlug(period) {
 
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-/** `ardent_revenue-by-channel_kosha_2026-07-01_2026-09-30.csv` */
+/** `ardent_revenue-by-channel_your-brand_2026-07-01_2026-09-30.csv` */
 export function exportFilename(name, { company, period, suffix = 'csv' } = {}) {
   return ['ardent', slug(name), company ? slug(company) : null, rangeSlug(period)]
     .filter(Boolean).join('_') + `.${suffix}`;
@@ -52,6 +52,9 @@ export function exportMeta({ title, company, period, channel, extra = {} }) {
     'Range (ISO)': period ? `${iso(period.start)} to ${iso(period.end)}` : '',
     Days: period ? Math.round((period.end - period.start) / 86400000) + 1 : '',
     Channel: channel ?? 'All channels',
+    // A money column is ambiguous once the file leaves Ardent, so the currency
+    // travels with it.
+    Currency: currencyCode(),
     'Generated on': iso(new Date()),
     ...extra,
   };

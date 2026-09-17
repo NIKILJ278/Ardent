@@ -19,6 +19,22 @@ class Config:
     SHOPIFY_API_SECRET = os.environ.get("SHOPIFY_API_SECRET", "")
     SHOPIFY_SCOPES = os.environ.get("SHOPIFY_SCOPES", "read_orders,read_products,read_inventory,read_customers")
     SHOPIFY_REDIRECT_URI = os.environ.get("SHOPIFY_REDIRECT_URI", "")
+    # Shopify retires API versions about a year after release; pinning an old
+    # one breaks the sync silently. Override in .env when Shopify moves on.
+    SHOPIFY_API_VERSION = os.environ.get("SHOPIFY_API_VERSION", "2026-07")
+    # How a store's calendar day is decided. The real timezone is read from
+    # Shopify per shop and stored on the connection; these are only the
+    # fallbacks used before the first sync has reported one.
+    #
+    # An IANA zone is preferred over a fixed offset because it handles daylight
+    # saving. A store in America/New_York shifts by an hour twice a year, and a
+    # fixed offset would silently misfile a day's late sales each time.
+    SHOP_TIMEZONE = os.environ.get("SHOP_TIMEZONE", "")
+    SHOP_UTC_OFFSET_MINUTES = int(os.environ.get("SHOP_UTC_OFFSET_MINUTES", "330"))
+
+    # Where the dashboard runs. Used for CORS and to send the browser back after
+    # a Shopify install.
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
     META_APP_ID = os.environ.get("META_APP_ID", "")
     META_APP_SECRET = os.environ.get("META_APP_SECRET", "")

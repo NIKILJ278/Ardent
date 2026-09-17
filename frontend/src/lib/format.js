@@ -1,27 +1,86 @@
 import { now } from './clock.js';
-// Indian business number formatting — lakhs / crores.
 
-export function inr(n, { compact = true, decimals } = {}) {
+/* Money is stated in the currency the connected store actually reports.
+ *
+ * Shopify converts every order into the shop's own currency at that order's
+ * own rate, so the figures reaching us are already single-currency and exact.
+ * This module only has to label and scale them — it never converts, because a
+ * conversion would need exchange rates no connected source supplies.
+ *
+ * The active currency is module state rather than a prop. Every figure on
+ * screen comes from one store, so threading a currency through a hundred call
+ * sites would add ceremony without adding truth.
+ */
+
+let CURRENCY = 'INR';
+let LOCALE = 'en-IN';
+let SYMBOL = '₹';
+
+/** Digit grouping differs by market: 12,34,567 in India, 1,234,567 elsewhere. */
+const localeFor = (code) => (code === 'INR' ? 'en-IN' : 'en-US');
+
+function symbolFor(code) {
+  try {
+    return new Intl.NumberFormat(localeFor(code), { style: 'currency', currency: code })
+      .formatToParts(0).find(part => part.type === 'currency')?.value ?? code;
+  } catch {
+    // An unrecognised code is shown as itself rather than guessed at.
+    return code;
+  }
+}
+
+/**
+ * Short scales, by convention rather than by arithmetic. A crore is not a
+ * translation of ten million — an Indian reader expects "1.2 Cr" where an
+ * American expects "12M", and showing the wrong one misreads at a glance.
+ */
+const INDIAN_STEPS  = [[1e7, 'Cr'], [1e5, 'L'], [1e3, 'k']];
+const WESTERN_STEPS = [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+
+const steps = () => (CURRENCY === 'INR' ? INDIAN_STEPS : WESTERN_STEPS);
+
+/** Point every formatter at the store's currency. Called when facts load. */
+export function setCurrency(code) {
+  CURRENCY = code || 'INR';
+  LOCALE = localeFor(CURRENCY);
+  SYMBOL = symbolFor(CURRENCY);
+}
+
+export const currencyCode = () => CURRENCY;
+export const currencySymbol = () => SYMBOL;
+
+/** Compact money, e.g. ₹1.2 Cr or $1.2M. */
+export function money(n, { compact = true, decimals } = {}) {
   if (n == null || Number.isNaN(n)) return '—';
   const abs = Math.abs(n);
   const sign = n < 0 ? '−' : '';
-  if (!compact) return `${sign}₹${Math.round(abs).toLocaleString('en-IN')}`;
-  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(decimals ?? 2)} Cr`;
-  if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(decimals ?? 1)} L`;
-  if (abs >= 1e3) return `${sign}₹${(abs / 1e3).toFixed(decimals ?? 1)}k`;
-  return `${sign}₹${Math.round(abs)}`;
+  if (!compact) return `${sign}${SYMBOL}${Math.round(abs).toLocaleString(LOCALE)}`;
+  for (const [div, suffix] of steps()) {
+    if (abs >= div) {
+      const dp = decimals ?? (suffix === 'k' || suffix === 'K' ? 1 : suffix === 'L' ? 1 : 2);
+      return `${sign}${SYMBOL}${(abs / div).toFixed(dp)}${suffix === 'Cr' || suffix === 'L' ? ' ' : ''}${suffix}`;
+    }
+  }
+  return `${sign}${SYMBOL}${Math.round(abs)}`;
 }
 
-/** Full rupees with Indian digit grouping — for tables and transaction rows. */
-export function inrExact(n) {
+/** Whole units with local digit grouping — for tables and transaction rows. */
+export function moneyExact(n) {
   if (n == null || Number.isNaN(n)) return '—';
   const sign = n < 0 ? '−' : '';
-  return `${sign}₹${Math.round(Math.abs(n)).toLocaleString('en-IN')}`;
+  return `${sign}${SYMBOL}${Math.round(Math.abs(n)).toLocaleString(LOCALE)}`;
+}
+
+/** The scale suffix an axis should use for a given maximum. */
+export function moneyScale(max) {
+  const a = Math.abs(max || 0);
+  for (const [div, suffix] of steps()) if (a >= div) return [div, suffix];
+  return [1, ''];
 }
 
 export function num(n, decimals = 0) {
   if (n == null || Number.isNaN(n)) return '—';
-  return n.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return n.toLocaleString(LOCALE, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
 export function pct(n, decimals = 1) {

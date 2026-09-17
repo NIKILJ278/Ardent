@@ -2,7 +2,7 @@ import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ReferenceLine, ReferenceDot, Cell,
 } from 'recharts';
-import { inr } from '../../lib/format.js';
+import { money, moneyScale } from '../../lib/format.js';
 import { LabelList } from 'recharts';
 
 /** Most events shown inside one tooltip before it is summarised. */
@@ -12,13 +12,14 @@ const MAX_TIP_EVENTS = 4;
  * One unit for the whole axis, chosen from its maximum. Formatting each tick
  * independently produces mixed scales on a single axis — "2.0L, 1.5L, 1.0L,
  * 50k" — which reads as a break in the series rather than a smaller number.
+ *
+ * The scale follows the store's currency: a rupee axis steps in lakhs and
+ * crores, a dollar axis in K and M. Reading "1.2 Cr" off a USD chart would be
+ * wrong twice over — wrong unit, and wrong by a factor of eight.
  */
 function makeAxisFmt(max) {
   const a = Math.abs(max || 0);
-  const [div, suffix] =
-    a >= 1e7 ? [1e7, 'Cr'] :
-    a >= 1e5 ? [1e5, 'L']  :
-    a >= 1e3 ? [1e3, 'k']  : [1, ''];
+  const [div, suffix] = moneyScale(a);
   const dp = div === 1 ? 0 : (a / div) >= 10 ? 0 : 1;
   return (v) => (v === 0 ? '0' : `${(v / div).toFixed(dp)}${suffix}`);
 }
@@ -27,7 +28,7 @@ function makeAxisFmt(max) {
 const axisFmt = (v) => makeAxisFmt(v)(v);
 
 /** Shared tooltip — identity is carried by a swatch plus the series name. */
-function Tip({ active, payload, label, labelFmt, valueFmt = inr, markerByLabel }) {
+function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel }) {
   if (!active || !payload?.length) return null;
   const marker = markerByLabel?.get(label);
   return (
@@ -198,7 +199,7 @@ export function RevenueTrend({
 
 /* ── Simple measure bars (one series, entity-coloured, always labelled) ─── */
 
-export function MeasureBars({ data, height = 240, colorKey = 'color', valueFmt = inr }) {
+export function MeasureBars({ data, height = 240, colorKey = 'color', valueFmt = money }) {
   const fmtTick = makeAxisFmt(Math.max(...data.map(d => d.value ?? 0), 1));
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -319,12 +320,12 @@ export function WaterfallChart({ steps, height = 250 }) {
                 <div className="tip-h">{label}</div>
                 <div className="tip-row">
                   <span className="k">{s.kind === 'cost' ? 'Deduction' : 'Total'}</span>
-                  <span className="v">{s.kind === 'cost' ? '−' : ''}{inr(Math.abs(s.amount))}</span>
+                  <span className="v">{s.kind === 'cost' ? '−' : ''}{money(Math.abs(s.amount))}</span>
                 </div>
                 {s.kind === 'cost' && (
                   <div className="tip-row">
                     <span className="k">Running</span>
-                    <span className="v">{inr(s.base)}</span>
+                    <span className="v">{money(s.base)}</span>
                   </div>
                 )}
               </div>
@@ -337,7 +338,7 @@ export function WaterfallChart({ steps, height = 250 }) {
           {steps.map((s, i) => <Cell key={i} fill={fillFor(s)} />)}
           <LabelList
             dataKey="amount" position="top" offset={6}
-            formatter={(v) => (v < 0 ? `−${inr(Math.abs(v))}` : inr(v))}
+            formatter={(v) => (v < 0 ? `−${money(Math.abs(v))}` : money(v))}
             style={{ fill: 'var(--ink-2)', fontSize: 10, fontWeight: 600 }}
           />
         </Bar>
@@ -357,7 +358,7 @@ export function WaterfallChart({ steps, height = 250 }) {
  * of the chart is when the line changed, not what it is worth today.
  */
 export function WatchChart({
-  points, markLabel, target, valueFmt = inr, height = 170, labelFmt,
+  points, markLabel, target, valueFmt = money, height = 170, labelFmt,
 }) {
   if (!points?.length) return null;
 
@@ -375,7 +376,7 @@ export function WatchChart({
   const markAt = markIndex > 0 ? points[markIndex].date : null;
 
   const max = Math.max(...points.map(p => p.value), target ?? 0);
-  const fmtAxis = valueFmt === inr ? makeAxisFmt(max) : valueFmt;
+  const fmtAxis = valueFmt === money ? makeAxisFmt(max) : valueFmt;
 
   return (
     <ResponsiveContainer width="100%" height={height}>

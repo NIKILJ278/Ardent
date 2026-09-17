@@ -7,17 +7,20 @@ import './styles/tokens.css';
 import './styles/app.css';
 
 import App from './App.jsx';
+import { SessionProvider } from './state/Session.jsx';
 import { AppStateProvider } from './state/AppState.jsx';
 import { DrilldownProvider } from './state/Drilldown.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AppStateProvider>
-      <DrilldownProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </DrilldownProvider>
-    </AppStateProvider>
+    <SessionProvider>
+      <AppStateProvider>
+        <DrilldownProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </DrilldownProvider>
+      </AppStateProvider>
+    </SessionProvider>
   </StrictMode>
 );

@@ -1118,3 +1118,89 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; min-height: 
   .rs-row { grid-template-columns: minmax(0, 1fr) auto; }
   .rs-delta { display: none; }
 }
+
+/* ── Live data: not connected, sign-in, onboarding ─────────────────────── */
+
+.not-connected {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 16px; border: 1px dashed var(--border-strong);
+  border-radius: var(--radius); background: var(--surface-2);
+}
+.not-connected.compact { padding: 10px 12px; gap: 10px; }
+.not-connected-icon {
+  flex: none; width: 34px; height: 34px; border-radius: 8px;
+  display: grid; place-items: center; background: var(--surface-3); color: var(--ink-3);
+}
+.not-connected.compact .not-connected-icon { width: 26px; height: 26px; border-radius: 6px; }
+.not-connected-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.not-connected-title { font-weight: 600; font-size: 13.5px; color: var(--ink); }
+.not-connected-needs { font-size: 12px; color: var(--ink-2); }
+.not-connected-text { font-size: 12px; color: var(--ink-3); line-height: 1.5; margin-top: 2px; }
+.not-connected-action { flex: none; align-self: center; }
+
+/* Ladder rows a connected source would fill. */
+.ladder-row.missing .ladder-label,
+.ladder-row.missing .ladder-value,
+.ladder-row.missing .ladder-pct { color: var(--ink-3); font-weight: 400; }
+.ladder-missing-tag {
+  font-size: 10.5px; padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+  border: 1px dashed var(--border-strong); color: var(--ink-3);
+}
+.ladder-missing { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+.ladder-missing-line { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-3); }
+.rev-anchor-value.unknown { font-size: 16px; color: var(--ink-3); font-weight: 500; }
+
+.health-empty {
+  width: 88px; height: 88px; border-radius: 50%;
+  border: 7px solid var(--surface-3);
+  display: grid; place-items: center;
+  font-size: 22px; font-weight: 600; color: var(--ink-3);
+}
+.health-na {
+  font-size: 11px; color: var(--ink-3); justify-self: start; white-space: nowrap;
+  border: 1px dashed var(--border-strong); border-radius: 4px; padding: 1px 6px;
+}
+
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.auth-wrap {
+  min-height: 100vh; display: grid; place-items: center;
+  padding: 24px 16px; background: var(--plane, var(--surface-2));
+}
+.auth-card {
+  width: 100%; max-width: 400px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 12px; padding: 26px 24px;
+}
+.auth-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 18px; }
+.auth-title { font-size: 19px; margin: 0; }
+.auth-sub { margin: 4px 0 18px; font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.auth-error {
+  font-size: 12.5px; color: var(--critical-ink); line-height: 1.45;
+  background: var(--critical-soft, var(--surface-2)); border-radius: var(--radius-sm); padding: 8px 10px;
+}
+.auth-switch {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
+  font-size: 12.5px; color: var(--ink-2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+}
+.auth-switch button { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+
+.onboard { display: flex; gap: 16px; align-items: flex-start; }
+.onboard-icon {
+  flex: none; width: 46px; height: 46px; border-radius: 11px;
+  display: grid; place-items: center; background: var(--accent-soft); color: var(--accent);
+}
+.onboard-body { display: flex; flex-direction: column; gap: 9px; align-items: flex-start; }
+.onboard-title { font-size: 16px; font-weight: 600; }
+.onboard-body p { margin: 0; font-size: 13px; color: var(--ink-2); line-height: 1.55; max-width: 560px; }
+
+.source-hint { font-size: 11.5px; color: var(--ink-3); line-height: 1.55; }
+.source-hint code { font-size: 11px; background: var(--surface-3); padding: 1px 5px; border-radius: 4px; word-break: break-all; }
+.banner { display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: var(--radius); font-size: 12.5px; }
+.banner.good { background: var(--good-soft); color: var(--good-ink); }
+.banner.critical { background: var(--critical-soft, var(--warning-soft)); color: var(--critical-ink); }
+
+@media (max-width: 720px) {
+  .onboard { flex-direction: column; }
+  .not-connected { flex-wrap: wrap; }
+}

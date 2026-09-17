@@ -6,7 +6,7 @@ import { indicatorTone } from '../../data/engine.js';
 import {
   DIMENSIONS, DIMENSION_BY_ID, HEALTH_SLOTS, dimensionDetail,
 } from '../../data/health.js';
-import { inr, num, pct } from '../../lib/format.js';
+import { money, num, pct } from '../../lib/format.js';
 
 /* Health breakdown and indicator choice.
  *
@@ -14,9 +14,13 @@ import { inr, num, pct } from '../../lib/format.js';
  * the chooser answers "are these even the right five questions for this
  * business". They belong together, because you change the set precisely when
  * the breakdown shows you a dimension that does not describe how you operate.
+ *
+ * A dimension whose data is not connected shows what it would need rather than
+ * a score — it is unanswered, not zero.
  */
 
 function DimensionRow({ dim, score, detail }) {
+  const scored = score != null;
   return (
     <div className="hd-row">
       <div className="spread" style={{ marginBottom: 5 }}>
@@ -24,9 +28,11 @@ function DimensionRow({ dim, score, detail }) {
           <span style={{ fontWeight: 600, fontSize: 13 }}>{dim.label}</span>
           <span className="tiny muted" style={{ display: 'block' }}>{dim.basis}</span>
         </span>
-        <span className="tnum" style={{ fontWeight: 600, fontSize: 15 }}>{score}</span>
+        <span className="tnum" style={{ fontWeight: 600, fontSize: 15 }}>{scored ? score : '—'}</span>
       </div>
-      <Track value={score} tone={indicatorTone(score)} />
+      {scored
+        ? <Track value={score} tone={indicatorTone(score)} />
+        : <div className="health-na">Not connected — needs {dim.needs}</div>}
       {detail.length > 0 && (
         <div className="hd-metrics">
           {detail.map(([label, value]) => {
@@ -46,7 +52,7 @@ function DimensionRow({ dim, score, detail }) {
   );
 }
 
-function IndicatorChooser({ draft, setDraft }) {
+function IndicatorChooser({ draft, setDraft, unavailable }) {
   const chosen = draft.dimensions;
   const full = chosen.length >= HEALTH_SLOTS;
 
@@ -90,7 +96,9 @@ function IndicatorChooser({ draft, setDraft }) {
                 <span className="hd-ord tnum">{i + 1}</span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{d.label}</span>
-                  <span className="tiny muted" style={{ display: 'block' }}>{d.question}</span>
+                  <span className="tiny muted" style={{ display: 'block' }}>
+                    {unavailable.includes(id) ? `Not connected — needs ${d.needs}` : d.question}
+                  </span>
                 </span>
                 <span className="hstack" style={{ gap: 2 }}>
                   <button className="btn btn-ghost btn-icon btn-sm" title="Move up"
@@ -117,7 +125,8 @@ function IndicatorChooser({ draft, setDraft }) {
         <div className="hd-grid">
           {DIMENSIONS.map(d => {
             const on = chosen.includes(d.id);
-            const missing = d.metrics.filter(mm => !mm.live).length;
+            const liveMetrics = d.metrics.filter(mm => mm.live);
+            const missing = d.metrics.length - liveMetrics.length;
             return (
               <button
                 key={d.id} type="button"
@@ -135,7 +144,7 @@ function IndicatorChooser({ draft, setDraft }) {
                 <span className="tiny" style={{ color: 'var(--ink-2)' }}>{d.question}</span>
                 <span className="tiny muted hd-blurb">{d.blurb}</span>
                 <span className="hd-tags">
-                  {d.metrics.filter(mm => mm.live).slice(0, 4).map(mm => (
+                  {liveMetrics.slice(0, 4).map(mm => (
                     <span key={mm.label} className="hd-tag">{mm.label}</span>
                   ))}
                   {missing > 0 && <span className="hd-tag off">{missing} not connected</span>}
@@ -181,7 +190,7 @@ export function HealthModal({ health, onClose }) {
         <p className="small muted" style={{ margin: 0, maxWidth: 520 }}>
           {view === 'breakdown'
             ? 'Each indicator is a business question scored from measured ratios. Nothing here is '
-              + 'inferred — every figure comes from the same data behind your KPIs.'
+              + 'inferred — where the data it needs is not connected, it says so instead of scoring.'
             : `Ardent tracks ten business dimensions. Pick the ${HEALTH_SLOTS} that describe how you `
               + 'actually run this business. The rest stay available but off the Overview.'}
         </p>
@@ -201,12 +210,12 @@ export function HealthModal({ health, onClose }) {
               key={d.id}
               dim={d}
               score={health.scores[d.id]}
-              detail={dimensionDetail(d.id, health.context, { inr, num, pct })}
+              detail={dimensionDetail(d.id, health.context, { money, num, pct })}
             />
           ))}
         </div>
       ) : (
-        <IndicatorChooser draft={draft} setDraft={setDraft} />
+        <IndicatorChooser draft={draft} setDraft={setDraft} unavailable={health.unavailable} />
       )}
     </Modal>
   );

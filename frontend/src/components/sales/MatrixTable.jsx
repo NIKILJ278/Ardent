@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { attributeMatrix } from '../../data/matrix.js';
-import { inr, num, pct } from '../../lib/format.js';
+import { money, num, pct } from '../../lib/format.js';
 import { Card, Segmented, Delta } from '../ui/index.jsx';
 import { WatchButton } from '../watch/WatchButton.jsx';
 
@@ -30,7 +30,7 @@ export function MatrixTable({ scope, title, subtitle }) {
   const allOpen = m.rows.every(r => isOpen(r.key));
   const toggleAll = () => setOpen(allOpen ? new Set() : new Set(m.rows.map(r => r.key)));
 
-  const fmt = measure === 'value' ? inr : num;
+  const fmt = measure === 'value' ? money : num;
   const sales = (c) => (measure === 'value' ? c.value : c.units);
   const peak = Math.max(...m.rows.flatMap(r => r.cells.map(sales)), 1);
 
@@ -40,8 +40,8 @@ export function MatrixTable({ scope, title, subtitle }) {
     {
       id: 'returns',
       label: 'Returns',
-      cell: (c) => <span className="muted">{inr(c.returns)}</span>,
-      total: <span className="muted">{inr(totalReturns)}</span>,
+      cell: (c) => <span className="muted">{money(c.returns)}</span>,
+      total: <span className="muted">{money(totalReturns)}</span>,
     },
     {
       id: 'returnPct',

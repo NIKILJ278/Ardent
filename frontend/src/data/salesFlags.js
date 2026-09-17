@@ -40,14 +40,16 @@ export function salesFlags(m, { growthPct, achievementPct, can } = {}) {
   if (m.discountPct >= FLAG_CUTS.discountHigh)
     add('warning', 'Discount dependency', `${m.discountPct.toFixed(1)}% of gross sales`);
 
-  if (m.channelCostPct >= FLAG_CUTS.channelCostHigh)
+  // Cost-based flags need the cost to be known. A null would otherwise compare as
+  // zero and raise — or silently clear — a flag on a figure nobody measured.
+  if (m.channelCostPct != null && m.channelCostPct >= FLAG_CUTS.channelCostHigh)
     add('critical', 'Channel cost high', `${m.channelCostPct.toFixed(1)}% of net sales`);
 
-  if (m.logisticsPct >= FLAG_CUTS.logisticsHigh)
+  if (m.logisticsPct != null && m.logisticsPct >= FLAG_CUTS.logisticsHigh)
     add('warning', 'Logistics above norm', `${m.logisticsPct.toFixed(1)}% of net sales`);
 
   // Contribution health is only ever surfaced to a permitted viewer.
-  if (can?.(PERM.CONTRIBUTION) && m.cm1Pct < FLAG_CUTS.cm1Low)
+  if (can?.(PERM.CONTRIBUTION) && m.cm1Pct != null && m.cm1Pct < FLAG_CUTS.cm1Low)
     add('critical', 'Thin contribution', `CM1 ${m.cm1Pct.toFixed(1)}% of net sales`);
 
   if (growthPct != null) {

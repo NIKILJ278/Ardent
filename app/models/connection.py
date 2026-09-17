@@ -7,6 +7,20 @@ def _uuid():
     return str(uuid.uuid4())
 
 
+def _utc_iso(dt):
+    """ISO timestamp that says it is UTC.
+
+    SQLite drops the timezone on read. Sent bare, a browser parses the value as
+    local time and every "last synced" figure in India reads five and a half
+    hours wrong.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
 class Connection(db.Model):
     __tablename__ = "connections"
 
@@ -46,9 +60,12 @@ class Connection(db.Model):
             "external_account_id": self.external_account_id,
             "display_name": self.display_name,
             "status": self.status,
-            "last_synced_at": self.last_synced_at.isoformat() if self.last_synced_at else None,
+            "last_synced_at": _utc_iso(self.last_synced_at),
             "last_error": self.last_error,
             "scopes": self.scopes,
+            # Platform profile: for Shopify, the shop's currency and timezone,
+            # which the dashboard needs to label figures and bucket days.
+            "meta": self.meta or {},
         }
         if include_tokens:
             data["access_token"] = self.access_token

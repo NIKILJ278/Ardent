@@ -1,9 +1,13 @@
-import { salesWaterfall } from '../../data/engine.js';
-import { inr, num, pct, fmtDate } from '../../lib/format.js';
+import { salesWaterfall, series } from '../../data/engine.js';
+import { money, num, pct, fmtDate } from '../../lib/format.js';
 import { Pill, Delta } from '../ui/index.jsx';
-import { STOCK_STATES } from '../../data/inventory.js';
+import { NotConnected } from '../ui/NotConnected.jsx';
 
-/* ── Waterfall — one definition, filtered by permission ─────────────────── */
+/* ── Waterfall — one definition, filtered by permission ───────────────────
+   The ladder runs as far as synced order data reaches and then stops. What it
+   cannot show is listed underneath by name, so a missing cost is visible
+   rather than silently absent.
+   ──────────────────────────────────────────────────────────────────────── */
 
 export function Waterfall({ model, can }) {
   const rows = salesWaterfall(model, can);
@@ -27,11 +31,23 @@ export function Waterfall({ model, can }) {
             <span className="ladder-bar">
               <span className={`ladder-fill ${tone}`} style={{ width: `${Math.max(1, (Math.abs(r.value) / peak) * 100)}%` }} />
             </span>
-            <span className={`ladder-value ${isCost ? 'cost' : ''}`}>{inr(Math.abs(r.value))}</span>
+            <span className={`ladder-value ${isCost ? 'cost' : ''}`}>{money(Math.abs(r.value))}</span>
             <span className="ladder-pct">{r.id === 'gross' ? '' : pct(share)}</span>
           </div>
         );
       })}
+
+      {rows.missing?.length > 0 && (
+        <div className="ladder-missing">
+          {rows.missing.map(line => (
+            <div className="ladder-missing-line" key={line}>
+              <span className="ladder-missing-tag">not connected</span>
+              <span>{line}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="ladder-foot">
         Percentages are share of Net Sales.
         {!can?.profit && ' Cost of goods and profitability are not included in your view.'}
@@ -56,67 +72,47 @@ export function Metric({ label, value, sub, delta, deltaUnit = '%', invert, flag
   );
 }
 
-/* ── Channel economics: the cost stack, always ₹ + % ────────────────────── */
-
-export function CostStack({ model, showCogs = false }) {
-  const lines = [
-    showCogs && { id: 'cogs', label: 'Cost of Goods Sold', v: model.cogs, p: model.cogsPct },
-    { id: 'fees',        label: 'Channel Fees',         v: model.channelFees, p: model.channelFeesPct },
-    { id: 'logistics',   label: 'Logistics',            v: model.logistics,   p: model.logisticsPct },
-    { id: 'warehousing', label: 'Warehousing',          v: model.warehousing, p: model.warehousingPct },
-    { id: 'fulfilment',  label: 'Fulfilment',           v: model.fulfilment,  p: model.fulfilmentPct },
-    { id: 'payment',     label: 'Payment & Collection', v: model.paymentFees, p: model.paymentFeesPct },
-    { id: 'other',       label: 'Other Channel Costs',  v: model.otherCost,   p: model.otherCostPct },
-  ].filter(Boolean);
-  const peak = Math.max(...lines.map(l => l.v), 1);
-
-  return (
-    <div className="vstack" style={{ gap: 9 }}>
-      {lines.map(l => (
-        <div className="bar-row" key={l.id}>
-          <span className="bl" title={l.label}>{l.label}</span>
-          <div className="bar-track">
-            <div className="bar-fill" style={{ width: `${Math.max(1.5, (l.v / peak) * 100)}%`, background: 'var(--series-2)' }} />
-          </div>
-          <span className="bv">{inr(l.v)} <span className="muted" style={{ fontWeight: 500 }}>{pct(l.p)}</span></span>
-        </div>
-      ))}
-      <div className="spread" style={{ paddingTop: 10, marginTop: 2, borderTop: '1px solid var(--border)' }}>
-        <span className="small" style={{ fontWeight: 600 }}>Total Channel Cost</span>
-        <span className="tnum" style={{ fontWeight: 700 }}>
-          {inr(model.channelCost)} <span className="muted small" style={{ fontWeight: 500 }}>{pct(model.channelCostPct)}</span>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* ── Unit economics: the same shape for company or a single channel ─────── */
+/* ── Unit economics — only what an order line can actually answer ───────── */
 
 export function UnitEconomics({ model, can, dense = false }) {
+  const showCogs = model.known.cogs && (!can || can('fin.cogs'));
   const cells = [
-    { l: 'Revenue / Order', v: inr(model.revenuePerOrder) },
-    { l: 'AOV',             v: inr(model.revenuePerOrder) },
-    { l: 'ASP',             v: inr(model.asp) },
+    { l: 'Revenue / Order', v: money(model.revenuePerOrder) },
+    { l: 'ASP',             v: money(model.asp) },
     { l: 'Units / Order',   v: model.unitsPerOrder.toFixed(2) },
-    { l: 'Discount / Order',v: inr(model.discountPerOrder) },
+    { l: 'Discount / Order', v: money(model.discountPerOrder) },
     { l: 'Return %',        v: pct(model.returnPct) },
     { l: 'Cancellation %',  v: pct(model.cancelPct) },
-    { l: 'Channel Cost / Order', v: inr(model.channelCostPerOrder) },
-    { l: 'Logistics / Order',    v: inr(model.logisticsPerOrder) },
-    { l: 'Channel Fee / Order',  v: inr(model.feesPerOrder) },
-    can?.profit && { l: 'Contribution / Order', v: inr(model.contributionPerOrder) },
-    can?.profit && { l: 'Contribution Margin',  v: pct(model.cm1Pct) },
+    showCogs && { l: 'Gross Margin / Order', v: money(model.grossMarginPerOrder) },
+    showCogs && { l: 'Gross Margin %',       v: pct(model.grossMarginPct) },
   ].filter(Boolean);
 
   return (
-    <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fit,minmax(${dense ? 108 : 124}px,1fr))`, gap: 10 }}>
-      {cells.map(c => (
-        <div key={c.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
-          <div className="tiny muted">{c.l}</div>
-          <div className="tnum" style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{c.v}</div>
-        </div>
-      ))}
+    <div className="vstack" style={{ gap: 12 }}>
+      <div className="grid" style={{ gridTemplateColumns: `repeat(auto-fit,minmax(${dense ? 108 : 124}px,1fr))`, gap: 10 }}>
+        {cells.map(c => (
+          <div key={c.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
+            <div className="tiny muted">{c.l}</div>
+            <div className="tnum" style={{ fontWeight: 600, fontSize: 15, marginTop: 2 }}>{c.v}</div>
+          </div>
+        ))}
+      </div>
+
+      {!showCogs && (
+        <NotConnected
+          title="Cost of goods per order"
+          needs="unit costs on every product sold"
+          compact
+        >
+          Shopify reports a unit cost only where you have entered one. Until every sold unit
+          carries one, a margin per order would understate cost.
+        </NotConnected>
+      )}
+      <NotConnected
+        title="Channel fee, logistics and contribution per order"
+        needs="payment gateway and courier connections"
+        compact
+      />
     </div>
   );
 }
@@ -136,25 +132,28 @@ export function FlagRow({ flags, max = 3 }) {
   );
 }
 
-/** ₹ plus share — the pairing that separates scale from unit economics. */
+/** Money plus share — the pairing that separates scale from unit economics. */
 export function MoneyPct({ v, p }) {
+  if (v == null) return <span className="tiny muted">not connected</span>;
   return (
     <span className="tnum">
-      {inr(v)} <span className="muted tiny" style={{ fontWeight: 500 }}>{pct(p)}</span>
+      {money(v)} <span className="muted tiny" style={{ fontWeight: 500 }}>{pct(p)}</span>
     </span>
   );
 }
 
 export { num };
 
-/* ── Weekly product performance, including stock in hand ────────────────── */
+/* ── Weekly sales — real order weeks, no stock ledger ─────────────────────
+   Stock in hand needs an inventory source, so this is what orders alone can
+   say: how much sold each week, at what price, and how much came back.
+   ──────────────────────────────────────────────────────────────────────── */
 
-export function WeeklyProduct({ data }) {
-  const { weeks, stockIsCompanyWide, avgWeeklyDemand, reorderPoint, plan, weeksStockedOut } = data;
-  if (!weeks.length) return <div className="empty" style={{ padding: 28 }}>No weeks in this period</div>;
+export function WeeklySales({ scope }) {
+  const weeks = series(scope, 'week');
+  if (!weeks.length) return <div className="empty" style={{ padding: 28 }}>No weeks with sales in this period</div>;
 
   const peakUnits = Math.max(...weeks.map(w => w.units), 1);
-  const peakStock = Math.max(...weeks.map(w => w.closingStock), 1);
 
   return (
     <div>
@@ -164,62 +163,47 @@ export function WeeklyProduct({ data }) {
             <tr>
               <th>Week starting</th>
               <th className="num">Units</th>
-              <th className="num">Sales</th>
+              <th className="num">Orders</th>
+              <th className="num">Net sales</th>
               <th className="num">Avg ASP</th>
+              <th className="num">Returns</th>
               <th className="num">Return %</th>
-              <th className="num">Received</th>
-              <th className="num">Stock in hand</th>
-              <th className="num">Cover</th>
-              <th>Position</th>
             </tr>
           </thead>
           <tbody>
-            {weeks.map(w => (
-              <tr key={w.id}>
-                <td>
-                  {fmtDate(w.ts, 'long')}
-                  {w.partial && <span className="tiny muted" style={{ display: 'block' }}>partial week</span>}
-                </td>
-                <td className="num">
-                  <span className="hstack" style={{ gap: 7, justifyContent: 'flex-end' }}>
-                    <span style={{ width: 40, height: 5, background: 'var(--surface-3)', borderRadius: 3, overflow: 'hidden' }}>
-                      <span style={{ display: 'block', height: '100%', width: `${(w.units / peakUnits) * 100}%`, background: 'var(--series-1)' }} />
+            {weeks.map(w => {
+              const net = w.grossSales - w.cancelValue - w.returnsValue - w.discount;
+              const asp = w.units ? (w.grossSales - w.discount) / w.units : null;
+              const returnPct = w.grossSales ? (w.returnsValue / w.grossSales) * 100 : 0;
+              return (
+                <tr key={w.date}>
+                  <td>{fmtDate(w.ts, 'long')}</td>
+                  <td className="num">
+                    <span className="hstack" style={{ gap: 7, justifyContent: 'flex-end' }}>
+                      <span style={{ width: 40, height: 5, background: 'var(--surface-3)', borderRadius: 3, overflow: 'hidden' }}>
+                        <span style={{ display: 'block', height: '100%', width: `${(w.units / peakUnits) * 100}%`, background: 'var(--series-1)' }} />
+                      </span>
+                      <span className="tnum">{num(w.units)}</span>
                     </span>
-                    <span className="tnum">{num(w.units)}</span>
-                  </span>
-                </td>
-                <td className="num">{inr(w.netSales)}</td>
-                <td className="num">{w.units ? inr(w.asp) : <span className="muted">—</span>}</td>
-                <td className="num">
-                  <span style={w.returnPct > 12 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>
-                    {pct(w.returnPct)}
-                  </span>
-                </td>
-                <td className="num">{w.received ? <span className="tnum" style={{ color: 'var(--good-ink)' }}>+{num(w.received)}</span> : <span className="muted">—</span>}</td>
-                <td className="num">
-                  <span className="hstack" style={{ gap: 7, justifyContent: 'flex-end' }}>
-                    <span style={{ width: 40, height: 5, background: 'var(--surface-3)', borderRadius: 3, overflow: 'hidden' }}>
-                      <span style={{
-                        display: 'block', height: '100%', width: `${(w.closingStock / peakStock) * 100}%`,
-                        background: w.state === 'healthy' ? 'var(--good)' : w.state === 'low' ? 'var(--warning)' : 'var(--critical)',
-                      }} />
+                  </td>
+                  <td className="num">{num(w.orders)}</td>
+                  <td className="num">{money(net)}</td>
+                  <td className="num">{asp == null ? <span className="muted">—</span> : money(asp)}</td>
+                  <td className="num">{money(w.returnsValue)}</td>
+                  <td className="num">
+                    <span style={returnPct > 12 ? { color: 'var(--critical-ink)', fontWeight: 600 } : undefined}>
+                      {pct(returnPct)}
                     </span>
-                    <strong className="tnum">{num(w.closingStock)}</strong>
-                  </span>
-                </td>
-                <td className="num">{w.coverWeeks.toFixed(1)}w</td>
-                <td><Pill tone={STOCK_STATES[w.state].tone}>{STOCK_STATES[w.state].label}</Pill></td>
-              </tr>
-            ))}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <div className="ladder-foot">
-        Stock is the closing balance each week: opening plus receipts and restocked returns, less units sold.
-        Average demand {Math.round(avgWeeklyDemand)} units a week · reorder at {num(reorderPoint)} units ·
-        {' '}{plan.leadTimeWeeks}-week lead time.
-        {stockIsCompanyWide && ' Stock is company-wide — one warehouse serves every channel — while sales reflect the channel filter.'}
-        {weeksStockedOut > 0 && ` ${weeksStockedOut} week(s) stocked out.`}
+        Weeks run Monday to Sunday and are summed from your synced orders. Stock in hand needs an
+        inventory source, which is not connected.
       </div>
     </div>
   );

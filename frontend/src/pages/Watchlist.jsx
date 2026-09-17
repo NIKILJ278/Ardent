@@ -378,7 +378,7 @@ export default function Watchlist() {
 
       {adding && (
         <WatchForm
-          subject={{ company: companyId === 'all' ? 'kosha' : companyId }}
+          subject={{ company: companyId }}
           onClose={() => setAdding(false)}
         />
       )}

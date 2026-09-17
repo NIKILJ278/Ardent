@@ -1,64 +1,64 @@
 // The CEO Overview's own reads.
 //
-// Three jobs: the journey from marketplace GMV to what the company actually
-// keeps, a short read on which products are winning and which are costing
-// money, and an explanation of every movement worth explaining.
+// Three jobs: the journey from GMV to what the company keeps, a short read on
+// which products are winning and which are coming back, and an explanation of
+// every movement worth explaining.
 //
 // Nothing here recomputes a figure another page derives — each function calls
-// the same model the Sales and Finance pages call, so the Overview can never
-// tell a different story from the module underneath it.
+// the same model the Sales page calls, so the Overview can never tell a
+// different story from the module underneath it.
 
-import {
-  salesModel, groupBy, series, totals, query, TODAY, bucketStart,
-} from './engine.js';
-import { PRODUCT_BY_ID, CHANNEL_BY_ID, skusForProduct } from './catalog.js';
+import { salesModel, groupBy, series, totals, bucketStart } from './engine.js';
+import { PRODUCT_BY_ID, CHANNEL_BY_ID, productForVariant, variantById } from './catalog.js';
 import { eventChannels, EVENT_KINDS, eventImpact } from './business.js';
 import { fmtDate } from '../lib/format.js';
 
 /* ── GMV to realized sales ─────────────────────────────────────────────── */
 
 /**
- * The full journey, as stepped rows.
+ * The journey, as stepped rows.
  *
- * GMV is gross sales including orders that were later cancelled, because that
- * is what the marketplace reports and what the CEO sees in Seller Central.
- * Everything below it is a real deduction taken from the same fact rows, so the
- * ladder lands on exactly the realized sales the Channel Economics page shows.
+ * GMV down to net sales is real. The charges between net sales and money that
+ * lands — gateway fees, courier costs, warehousing — are not in Shopify's order
+ * data, so those rows are listed but carry no value, and final realized sales
+ * is unknown. The gap is shown rather than filled with an assumed rate.
  *
- * Percentages are of GMV throughout, so "returns 4.9%" means the same thing on
- * every line rather than shifting base as the ladder descends.
+ * Percentages are of GMV throughout, so every line compares on the same base.
  */
 export function realizedLadder(scope) {
   const m = salesModel(scope);
   const gmv = m.grossSales || 1;
-  const pctOfGmv = (v) => (v / gmv) * 100;
+  const pctOfGmv = (v) => (v == null ? null : (v / gmv) * 100);
 
   const toNet = [
-    { id: 'returns', label: 'Returns & RTO', value: m.returns },
+    { id: 'returns', label: 'Returns', value: m.returns },
     { id: 'cancellations', label: 'Cancellations', value: m.cancellations },
     { id: 'discounts', label: 'Discounts', value: m.discounts },
   ];
   const toRealized = [
-    { id: 'fees', label: 'Marketplace charges', value: m.channelFees },
-    { id: 'logistics', label: 'Logistics & collection', value: m.logistics + m.paymentFees },
-    { id: 'other', label: 'Warehousing, fulfilment & other', value: m.warehousing + m.fulfilment + m.otherCost },
+    { id: 'fees', label: 'Payment gateway charges' },
+    { id: 'logistics', label: 'Shipping & courier costs' },
+    { id: 'other', label: 'Warehousing, fulfilment & other' },
   ];
 
   const rows = [
     { id: 'gmv', label: 'GMV', kind: 'head', value: m.grossSales, pct: 100 },
     ...toNet.map(r => ({ ...r, kind: 'deduct', pct: pctOfGmv(r.value) })),
     { id: 'netSales', label: 'Net Sales', kind: 'subtotal', value: m.netSales, pct: pctOfGmv(m.netSales) },
-    ...toRealized.map(r => ({ ...r, kind: 'deduct', pct: pctOfGmv(r.value) })),
-    { id: 'realized', label: 'Final Realized Sales', kind: 'total', value: m.realizedSales, pct: pctOfGmv(m.realizedSales) },
+    ...toRealized.map(r => ({ ...r, kind: 'missing', value: null, pct: null })),
+    { id: 'realized', label: 'Final Realized Sales', kind: 'total', value: null, pct: null, missing: true },
   ];
 
   return {
     rows,
     gmv: m.grossSales,
     netSales: m.netSales,
-    realized: m.realizedSales,
-    totalDeductions: m.grossSales - m.realizedSales,
-    realizedPct: pctOfGmv(m.realizedSales),
+    netSalesPct: pctOfGmv(m.netSales),
+    realized: null,
+    realizedKnown: false,
+    realizedPct: null,
+    // What is known to come off GMV so far — not the full deduction.
+    knownDeductions: m.grossSales - m.netSales,
     model: m,
   };
 }
@@ -69,72 +69,62 @@ export function realizedLadder(scope) {
  * Three short lists rather than one long table: what is carrying the business,
  * what is not paying its way, and what is coming back.
  *
- * The return list is ranked by rate but filtered by value, because a 40% return
- * rate on a product that sold four units is noise, not a problem.
+ * Returns are ranked by variant, because it is a size or colour that gets sent
+ * back, and filtered by value, because a 40% return rate on four units is noise.
  */
 export function productIntelligence(scope, prevScope, limit = 4) {
   const cur = groupBy(scope, 'product');
   const prev = new Map(groupBy(prevScope, 'product').map(r => [r.key, r]));
-  if (!cur.length) return { top: [], weak: [], returns: [], count: 0 };
+  if (!cur.length) return { top: [], weak: [], returns: [], count: 0, averageReturnPct: 0 };
 
   const rows = cur.map(r => {
     const p = PRODUCT_BY_ID[r.key];
     const pv = prev.get(r.key);
-    const netSales = r.grossSales - r.cancelValue - r.returnsValue - r.discount;
     return {
       id: r.key,
       name: p?.name ?? r.key,
       category: p?.category,
       subcategory: p?.subcategory,
-      netSales,
+      netSales: r.grossSales - r.cancelValue - r.returnsValue - r.discount,
       units: r.units,
       returnValue: r.returnsValue,
       returnPct: r.grossSales ? (r.returnsValue / r.grossSales) * 100 : 0,
       growth: pv?.net ? ((r.net - pv.net) / pv.net) * 100 : null,
-      isNew: !!p?.launchedOn,
     };
   });
 
   const bySales = [...rows].sort((a, b) => b.netSales - a.netSales);
 
-  // Returns are ranked at variant level, not product level.
-  //
-  // A product's return rate is an average over its sizes and barely moves
-  // between products — every one lands near the company rate, so a product
-  // ranking says nothing. The spread lives in the variants, which is also where
-  // the fix lives: it is a size that gets sent back, not a catalogue entry.
-  const variants = [];
-  for (const r of rows) {
-    const product = PRODUCT_BY_ID[r.id];
-    if (!product) continue;
-    for (const v of skusForProduct(product)) {
-      const returnValue = r.returnValue * v.ratio * v.returnFactor;
-      const gross = (r.netSales + r.returnValue) * v.ratio;
-      variants.push({
-        id: v.id,
-        name: `${product.name} · ${v.label}`,
-        productId: r.id,
-        code: v.code,
-        netSales: r.netSales * v.ratio,
-        returnValue,
-        returnPct: gross > 0 ? (returnValue / gross) * 100 : 0,
-      });
-    }
-  }
-  // A high rate on a trickle of sales is noise. Only variants carrying at least
-  // an average share of returned value can qualify as a problem.
-  const meanReturn = variants.reduce((s, v) => s + v.returnValue, 0) / (variants.length || 1);
-  const byReturns = variants
+  const variants = groupBy(scope, 'variant').map(v => {
+    const product = productForVariant(v.key);
+    const meta = variantById(v.key);
+    return {
+      id: v.key,
+      name: product ? `${product.name} · ${meta?.title ?? 'Default'}` : v.key,
+      productId: product?.id ?? null,
+      code: meta?.sku ?? null,
+      netSales: v.grossSales - v.cancelValue - v.returnsValue - v.discount,
+      returnValue: v.returnsValue,
+      returnPct: v.grossSales ? (v.returnsValue / v.grossSales) * 100 : 0,
+    };
+  });
+  const withReturns = variants.filter(v => v.returnValue > 0);
+  const meanReturn = withReturns.reduce((s, v) => s + v.returnValue, 0) / (withReturns.length || 1);
+  const byReturns = withReturns
     .filter(v => v.returnValue >= meanReturn * 0.6)
     .sort((a, b) => b.returnPct - a.returnPct);
 
+  const gross = cur.reduce((s, r) => s + r.grossSales, 0);
+  const returned = cur.reduce((s, r) => s + r.returnsValue, 0);
+
   return {
     top: bySales.slice(0, limit),
-    weak: bySales.slice(-limit).reverse(),
+    // With few products the two lists would repeat each other; only show a weak
+    // list once there are products that are not already in the top one.
+    weak: bySales.length > limit ? bySales.slice(-limit).reverse() : [],
     returns: byReturns.slice(0, limit),
     count: rows.length,
-    averageReturnPct: rows.reduce((s, r) => s + r.returnValue, 0)
-      / (rows.reduce((s, r) => s + r.netSales + r.returnValue, 0) || 1) * 100,
+    averageReturnPct: gross ? (returned / gross) * 100 : 0,
   };
 }
 
@@ -153,9 +143,7 @@ export const TREND_MONTHS = 12;
  *
  * A "This Month" filter would otherwise draw a single point, which is not a
  * trend — so when the selected period spans fewer than three months the chart
- * falls back to a trailing twelve-month window ending at the period. The caller
- * is told which window it got, and says so on the card, because a chart whose
- * range silently differs from the page filter is worse than a short one.
+ * falls back to a trailing twelve-month window ending at the period, and says so.
  */
 export function gmvTrend(scope, prevScope, period) {
   const span = period ? monthSpan(period) : 3;
@@ -167,7 +155,6 @@ export function gmvTrend(scope, prevScope, period) {
     const start = new Date(end.getFullYear(), end.getMonth() - (TREND_MONTHS - 1), 1);
     start.setHours(0, 0, 0, 0);
     curScope = { ...scope, start, end };
-    // The comparison is the twelve months before that, so like meets like.
     const cmpEnd = new Date(start.getTime() - 1);
     const cmpStart = new Date(cmpEnd.getFullYear(), cmpEnd.getMonth() - (TREND_MONTHS - 1), 1);
     cmpStart.setHours(0, 0, 0, 0);
@@ -199,11 +186,8 @@ const moveOf = (points, i) => {
 
 /**
  * Attach events to the buckets they landed in, and only keep the movements
- * worth a CEO's attention.
- *
- * A pointer on every wobble is clutter, so a bucket earns an annotation only
- * when it either moved beyond the threshold or carries a logged event. The
- * quoted percentage is the measured movement, never the event's claimed effect.
+ * worth a CEO's attention. A bucket earns an annotation only when it moved
+ * beyond the threshold or carries an event you logged.
  */
 export function trendAnnotations({ points, events, notes, companyId, channelId, threshold = 6 }) {
   const all = [...(events ?? []), ...(notes ?? [])]
@@ -212,35 +196,27 @@ export function trendAnnotations({ points, events, notes, companyId, channelId, 
 
   const byBucket = new Map();
   for (const e of all) {
-    const ts = new Date(`${e.date}T12:00:00`).getTime();
-    const key = bucketStart(ts, 'month');
+    const key = bucketStart(new Date(`${e.date}T12:00:00`).getTime(), 'month');
     if (!byBucket.has(key)) byBucket.set(key, []);
     byBucket.get(key).push(e);
   }
 
+  const RANK = { ops: 0, price: 1, promotion: 2, campaign: 3, launch: 4, channel: 5, business: 6, note: 7 };
   const out = [];
   points.forEach((p, i) => {
     const move = moveOf(points, i);
-    const key = bucketStart(p.ts, 'month');
-    const hits = byBucket.get(key) ?? [];
-    const big = move != null && Math.abs(move) >= threshold;
-    if (!hits.length && !big) return;
+    const hits = byBucket.get(bucketStart(p.ts, 'month')) ?? [];
+    if (!hits.length && !(move != null && Math.abs(move) >= threshold)) return;
 
-    // One pointer per bucket. Where several events landed, the most severe
-    // leads, so a stock-out is never hidden behind a campaign.
-    const RANK = { ops: 0, price: 1, promotion: 2, campaign: 3, launch: 4, channel: 5, business: 6, note: 7 };
+    // The most severe event leads, so a stock-out is never hidden by a campaign.
     const lead = [...hits].sort((a, b) => (RANK[a.kind] ?? 9) - (RANK[b.kind] ?? 9))[0];
 
-    // The bucket's movement and the event's effect are two different numbers.
-    // Quoting the month's move next to an event implies the event caused all of
-    // it, which is how a launch ends up captioned with a decline. The event
-    // carries its own measured window instead: revenue in the seven days from
-    // it against the seven before, on the channels it actually touched.
+    // The month's movement and the event's own effect are different numbers,
+    // so the event carries its own measured window.
     let impact = null;
     if (lead) {
-      const measured = eventImpact(lead).filter(x => x.changePct != null);
-      if (measured.length) {
-        const strongest = measured[0];
+      const strongest = eventImpact(lead).find(x => x.changePct != null);
+      if (strongest) {
         impact = {
           channel: CHANNEL_BY_ID[strongest.channel]?.name ?? strongest.channel,
           changePct: strongest.changePct,
@@ -260,8 +236,6 @@ export function trendAnnotations({ points, events, notes, companyId, channelId, 
       kind: lead ? (EVENT_KINDS[lead.kind]?.label ?? lead.kind) : null,
       others: Math.max(0, hits.length - 1),
       impact,
-      // An unexplained move is worth flagging as such — that is the gap the CEO
-      // should be filling with a note.
       explained: !!lead,
     });
   });
@@ -270,33 +244,28 @@ export function trendAnnotations({ points, events, notes, companyId, channelId, 
 
 /* ── What changed, why, and what it cost ───────────────────────────────── */
 
-const signed = (n, unit = '%') =>
-  `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}${unit}`;
+const signed = (n, unit = '%') => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}${unit}`;
 
 /**
- * The Overview's interpretation layer.
- *
- * Each reading states the movement, names the largest contributor with its own
- * share, and quantifies the effect in rupees. A contributor is only named when
- * it genuinely leads — where the change is spread evenly, saying so is more
- * useful than picking an arbitrary winner.
+ * The Overview's interpretation layer. Each reading states the movement, names
+ * the largest contributor where one genuinely leads, and quantifies the effect.
  */
 export function readings({ scope, prevScope, fmt }) {
-  const { inr } = fmt;
+  const { money } = fmt;
   const cur = totals(scope);
   const prev = totals(prevScope);
   const out = [];
   if (!prev.grossSales) return out;
 
   const contributions = (dim) => {
-    const c = groupBy(scope, dim);
     const p = new Map(groupBy(prevScope, dim).map(r => [r.key, r]));
     const nameOf = (k) => (dim === 'channel' ? CHANNEL_BY_ID[k]?.name ?? k : PRODUCT_BY_ID[k]?.name ?? k);
-    return c.map(r => {
+    return groupBy(scope, dim).map(r => {
       const before = p.get(r.key);
       return {
         key: r.key,
         name: nameOf(r.key),
+        grossSales: r.grossSales,
         delta: r.grossSales - (before?.grossSales ?? 0),
         deltaReturns: r.returnsValue - (before?.returnsValue ?? 0),
         pct: before?.grossSales ? ((r.grossSales - before.grossSales) / before.grossSales) * 100 : null,
@@ -306,29 +275,37 @@ export function readings({ scope, prevScope, fmt }) {
 
   /* 1. GMV. */
   const gmvMove = ((cur.grossSales - prev.grossSales) / prev.grossSales) * 100;
+  const gmvDelta = cur.grossSales - prev.grossSales;
   const chans = contributions('channel').sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   const prods = contributions('product').sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  const gmvDelta = cur.grossSales - prev.grossSales;
-  const lead = chans[0];
-  const leadShare = gmvDelta !== 0 && lead ? (lead.delta / gmvDelta) * 100 : null;
-  // A channel that is 40% of the business moving 40% of the change has not
-  // "driven" anything — it is simply large. Only name a contributor when its
-  // share of the movement clearly exceeds its share of the base.
-  const curByChannel = groupBy(scope, 'channel');
-  const baseTotal = curByChannel.reduce((s, c) => s + c.grossSales, 0) || 1;
-  const leadWeight = lead
-    ? ((curByChannel.find(c => c.key === lead.key)?.grossSales ?? 0) / baseTotal) * 100
-    : 0;
-  const leadDrove = leadShare != null && leadShare - leadWeight > 12;
+
+  // A contributor that is 40% of the base moving 40% of the change has not
+  // driven anything; name one only when its share of the move clearly exceeds
+  // its share of the base. With a single channel there is nothing to compare.
+  let why;
+  if (chans.length > 1) {
+    const lead = chans[0];
+    const share = gmvDelta !== 0 ? (lead.delta / gmvDelta) * 100 : 0;
+    const weight = cur.grossSales ? (lead.grossSales / cur.grossSales) * 100 : 0;
+    why = share - weight > 12
+      ? `${lead.name} drove it — ${Math.abs(share).toFixed(0)}% of the change on ${weight.toFixed(0)}% of the base`
+      : 'the movement is broad-based across channels';
+  } else if (prods.length > 1) {
+    const lead = prods[0];
+    const share = gmvDelta !== 0 ? (lead.delta / gmvDelta) * 100 : 0;
+    why = Math.abs(share) > 35
+      ? `${lead.name} accounts for ${Math.abs(share).toFixed(0)}% of the change`
+      : 'no single product dominates the change';
+  } else {
+    why = 'a single product and channel carry all sales';
+  }
 
   out.push({
     id: 'gmv',
     tone: gmvMove >= 0 ? 'good' : 'critical',
     what: `GMV ${gmvMove >= 0 ? 'increased' : 'declined'} ${Math.abs(gmvMove).toFixed(1)}%`,
-    why: leadDrove
-      ? `${lead.name} drove it — ${Math.abs(leadShare).toFixed(0)}% of the change on ${leadWeight.toFixed(0)}% of the base`
-      : 'growth is broad-based, with every channel moving roughly in line with its size',
-    impact: prods[0] ? `${prods[0].name} ${prods[0].delta >= 0 ? 'added' : 'lost'} ${inr(Math.abs(prods[0].delta))}` : null,
+    why,
+    impact: prods[0] ? `${prods[0].name} ${prods[0].delta >= 0 ? 'added' : 'lost'} ${money(Math.abs(prods[0].delta))}` : null,
   });
 
   /* 2. Returns. */
@@ -345,33 +322,30 @@ export function readings({ scope, prevScope, fmt }) {
         why: worst && share != null && Math.abs(share) > 25
           ? `${worst.name} accounts for ${Math.abs(share).toFixed(0)}% of the change`
           : 'no single product dominates the change',
-        impact: `Value ${retMove >= 0 ? 'lost' : 'recovered'} ${inr(Math.abs(retDelta))}`,
+        impact: `Value ${retMove >= 0 ? 'lost' : 'recovered'} ${money(Math.abs(retDelta))}`,
       });
     }
   }
 
-  /* 3. Margin. */
+  /* 3. Gross margin — only when both periods were fully costed. */
   const curM = salesModel(scope);
   const prevM = salesModel(prevScope);
-  const marginMove = curM.cm1Pct - prevM.cm1Pct;
-  if (Math.abs(marginMove) >= 0.5) {
-    // Which line moved most against net sales decides the explanation.
-    const drivers = [
-      { label: 'marketplace charges', now: curM.channelFeesPct, was: prevM.channelFeesPct },
-      { label: 'returns', now: curM.returnPct, was: prevM.returnPct },
-      { label: 'discounting', now: curM.discountPct, was: prevM.discountPct },
-      { label: 'cost of goods', now: curM.cogsPct, was: prevM.cogsPct },
-      { label: 'logistics', now: curM.logisticsPct, was: prevM.logisticsPct },
-    ].map(d => ({ ...d, move: d.now - d.was }))
-      .sort((a, b) => Math.abs(b.move) - Math.abs(a.move));
-
-    out.push({
-      id: 'margin',
-      tone: marginMove >= 0 ? 'good' : 'serious',
-      what: `Contribution margin ${marginMove >= 0 ? 'improved' : 'declined'} ${Math.abs(marginMove).toFixed(1)} percentage points`,
-      why: `${drivers[0].label} moved ${signed(drivers[0].move, 'pp')}`,
-      impact: `Now ${curM.cm1Pct.toFixed(1)}% of net sales`,
-    });
+  if (curM.known.cogs && prevM.known.cogs) {
+    const marginMove = curM.grossMarginPct - prevM.grossMarginPct;
+    if (Math.abs(marginMove) >= 0.5) {
+      const drivers = [
+        { label: 'returns', move: curM.returnPct - prevM.returnPct },
+        { label: 'discounting', move: curM.discountPct - prevM.discountPct },
+        { label: 'cost of goods', move: curM.cogsPct - prevM.cogsPct },
+      ].sort((a, b) => Math.abs(b.move) - Math.abs(a.move));
+      out.push({
+        id: 'margin',
+        tone: marginMove >= 0 ? 'good' : 'serious',
+        what: `Gross margin ${marginMove >= 0 ? 'improved' : 'declined'} ${Math.abs(marginMove).toFixed(1)} percentage points`,
+        why: `${drivers[0].label} moved ${signed(drivers[0].move, 'pp')}`,
+        impact: `Now ${curM.grossMarginPct.toFixed(1)}% of net sales`,
+      });
+    }
   }
 
   return out;
@@ -379,24 +353,18 @@ export function readings({ scope, prevScope, fmt }) {
 
 /* ── Freshness ─────────────────────────────────────────────────────────── */
 
-/**
- * When the connected platforms last delivered data. The Overview states the
- * freshest sync, because that is the honest answer to "how current is this" —
- * a stale bank upload is reported separately on the Data Sources page.
- */
+/** When a connected source last delivered data. */
 export function lastUpdated(sources) {
-  const live = (sources ?? []).filter(s => s.status === 'connected' && s.lastSync);
-  if (!live.length) return null;
-  const newest = live.reduce((a, s) => (s.lastSync > a.lastSync ? s : a));
-  return { at: newest.lastSync, source: newest.name, count: live.length };
+  const synced = (sources ?? []).filter(s => s.status === 'connected' && s.lastSync);
+  if (!synced.length) return null;
+  const newest = synced.reduce((a, s) => (s.lastSync > a.lastSync ? s : a));
+  return { at: newest.lastSync, source: newest.name, count: synced.length };
 }
 
-/** Platforms the CEO can switch between, from what this company actually sells on. */
+/** Platforms the CEO can switch between, from what this brand actually sells on. */
 export function platformOptions(companyChannels) {
   return [
     { id: 'all', name: 'All Platforms' },
     ...companyChannels.map(id => ({ id, name: CHANNEL_BY_ID[id]?.name ?? id })),
   ];
 }
-
-export { TODAY, query };

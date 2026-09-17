@@ -1,32 +1,34 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, TrendingUp, Wallet, Target, Users, FileText, Settings2,
   CircleHelp, Scale, Boxes, UserRound, Megaphone, Sparkles, Plug,
   PanelLeftClose, PanelLeft, Menu, Sun, Moon, Bell, ChevronDown, Check,
-  Download, Calendar, Building2, Store, Barcode, Receipt, Eye,
+  Download, Calendar, Building2, Store, Barcode, Receipt, Eye, LogOut,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState.jsx';
-import { COMPANIES, CHANNELS, CHANNEL_BY_ID, channelsFor } from '../../data/catalog.js';
+import { useSession } from '../../state/Session.jsx';
+import { CHANNELS, CHANNEL_BY_ID, COMPANY_BY_ID, channelsFor } from '../../data/catalog.js';
 import { PERIOD_PRESETS, COMPARISON_MODES, DATA_RANGE } from '../../data/engine.js';
 import { QUICK_EXPORTS, buildExport, canExport } from '../../data/exports.js';
+import { live } from '../../data/live.js';
 import { exportCsv, exportMeta } from '../../lib/csv.js';
-import { COMPANY_BY_ID } from '../../data/catalog.js';
+import { channelColor } from '../../lib/channels.js';
 import { Popover } from '../ui/index.jsx';
 import { ROLES, PERM } from '../../state/permissions.js';
-import { fmtDate, iso, periodRange, num } from '../../lib/format.js';
+import { fmtDate, iso, periodRange, num, relativeTime } from '../../lib/format.js';
 
 const NAV = [
   { group: null, items: [{ to: '/overview', icon: LayoutGrid, label: 'Overview' }] },
   {
     group: 'Performance',
     items: [
-      { to: '/sales',   icon: TrendingUp, label: 'Sales' },
-      { to: '/ads',     icon: Megaphone,  label: 'Ads' },
-      { to: '/finance', icon: Wallet,     label: 'Finance' },
-      { to: '/goals',   icon: Target,     label: 'Goals & Targets' },
-      { to: '/watchlist', icon: Eye,      label: 'Watchlist' },
-      { to: '/people',  icon: Users,      label: 'People & HR' },
+      { to: '/sales',     icon: TrendingUp, label: 'Sales' },
+      { to: '/ads',       icon: Megaphone,  label: 'Ads' },
+      { to: '/finance',   icon: Wallet,     label: 'Finance' },
+      { to: '/goals',     icon: Target,     label: 'Goals & Targets' },
+      { to: '/watchlist', icon: Eye,        label: 'Watchlist' },
+      { to: '/people',    icon: Users,      label: 'People & HR' },
     ],
   },
   {
@@ -43,17 +45,23 @@ const NAV = [
   {
     group: 'Coming soon',
     items: [
-      { to: '/customers', icon: UserRound,  label: 'Customers',   soon: true },
-      { to: '/insights',  icon: Sparkles,   label: 'AI Insights', soon: true },
+      { to: '/customers', icon: UserRound, label: 'Customers',   soon: true },
+      { to: '/insights',  icon: Sparkles,  label: 'AI Insights', soon: true },
     ],
   },
 ];
+
+const initials = (s) => (s || '?')
+  .split(/[\s@._-]+/).filter(Boolean).slice(0, 2)
+  .map(w => w[0].toUpperCase()).join('');
 
 /* ── Sidebar ───────────────────────────────────────────────────────────── */
 
 function Sidebar({ collapsed, onToggle }) {
   const { companyId, sidebarOpen, setSidebarOpen, can } = useApp();
-  const company = COMPANIES.find(c => c.id === companyId);
+  const { user } = useSession();
+  const brand = COMPANY_BY_ID[companyId];
+  const person = user?.full_name || user?.email || '';
 
   return (
     <nav className={`sidebar${collapsed ? ' collapsed' : ''}${sidebarOpen ? ' mobile-open' : ''}`}>
@@ -102,15 +110,15 @@ function Sidebar({ collapsed, onToggle }) {
 
       <div className="sidebar-foot">
         {collapsed ? (
-          <div className="avatar" title={company?.ceo}>VS</div>
+          <div className="avatar" title={person}>{initials(person)}</div>
         ) : (
           <>
-            <div className="nav-group-label" style={{ padding: '0 2px 6px' }}>Company</div>
+            <div className="nav-group-label" style={{ padding: '0 2px 6px' }}>Brand</div>
             <div className="who">
-              <span className="avatar">{(company?.name ?? 'AB').slice(0, 2).toUpperCase()}</span>
+              <span className="avatar">{initials(brand?.name)}</span>
               <span className="who-meta">
-                <span className="who-name">{company?.name ?? 'All Brands'}</span>
-                <span className="who-role">{company?.ceo ?? 'Vismay Shah'} · CEO</span>
+                <span className="who-name">{brand?.name ?? 'No brand'}</span>
+                <span className="who-role">{person}</span>
               </span>
             </div>
           </>
@@ -120,11 +128,12 @@ function Sidebar({ collapsed, onToggle }) {
   );
 }
 
-/* ── Company selector ──────────────────────────────────────────────────── */
+/* ── Brand selector ────────────────────────────────────────────────────── */
 
-function CompanySelector() {
-  const { companyId, setCompanyId } = useApp();
-  const label = companyId === 'all' ? 'All Brands' : COMPANIES.find(c => c.id === companyId)?.name;
+function BrandSelector() {
+  const { companyId } = useApp();
+  const { brands, selectBrand } = useSession();
+  const label = brands.find(b => b.id === companyId)?.name ?? 'Brand';
 
   return (
     <Popover
@@ -139,23 +148,21 @@ function CompanySelector() {
     >
       {({ close }) => (
         <>
-          <div className="pop-label">My Companies</div>
-          {COMPANIES.map(c => (
-            <button key={c.id} className={`pop-item${companyId === c.id ? ' on' : ''}`} onClick={() => { setCompanyId(c.id); close(); }}>
-              <span className="avatar" style={{ width: 22, height: 22, fontSize: 9.5 }}>{c.name.slice(0, 2).toUpperCase()}</span>
+          <div className="pop-label">Your brands</div>
+          {brands.map(b => (
+            <button key={b.id} className={`pop-item${companyId === b.id ? ' on' : ''}`} onClick={() => { selectBrand(b.id); close(); }}>
+              <span className="avatar" style={{ width: 22, height: 22, fontSize: 9.5 }}>{initials(b.name)}</span>
               <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: 'block', fontWeight: 500 }}>{c.name}</span>
-                <span className="tiny muted">{c.sector}</span>
+                <span style={{ display: 'block', fontWeight: 500 }}>{b.name}</span>
+                <span className="tiny muted">{b.role}</span>
               </span>
-              {companyId === c.id && <Check size={14} />}
+              {companyId === b.id && <Check size={14} />}
             </button>
           ))}
           <div className="pop-sep" />
-          <button className={`pop-item${companyId === 'all' ? ' on' : ''}`} onClick={() => { setCompanyId('all'); close(); }}>
-            <LayoutGrid size={15} />
-            <span style={{ flex: 1 }}>All Brands<span className="tiny muted" style={{ display: 'block' }}>Group roll-up</span></span>
-            {companyId === 'all' && <Check size={14} />}
-          </button>
+          <NavLink to="/settings" className="pop-item" onClick={close}>
+            <Settings2 size={14} /> Manage brands
+          </NavLink>
         </>
       )}
     </Popover>
@@ -164,14 +171,20 @@ function CompanySelector() {
 
 /* ── Channel filter ────────────────────────────────────────────────────── */
 
-const SERIES_VARS = ['var(--series-1)', 'var(--series-2)', 'var(--series-3)', 'var(--series-4)', 'var(--series-5)'];
-
 function ChannelSelector() {
   const { channelId, setChannelId, companyId } = useApp();
-  // Only offer channels the selected company actually sells on.
+  // Only channels the brand's connected stores actually report.
   const available = CHANNELS.filter(c => channelsFor(companyId).includes(c.id));
   const active = channelId !== 'all';
   const current = CHANNEL_BY_ID[channelId];
+
+  if (!available.length) {
+    return (
+      <button className="btn" disabled title="Channels appear once a store is connected and synced">
+        <Store size={14} /><span>No channels yet</span>
+      </button>
+    );
+  }
 
   return (
     <Popover
@@ -183,9 +196,7 @@ function ChannelSelector() {
           title="Filter the dashboard to one sales channel"
           style={active ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : undefined}
         >
-          {active
-            ? <span className="swatch" style={{ background: SERIES_VARS[current?.slot % 5] }} />
-            : <Store size={14} />}
+          {active ? <span className="swatch" style={{ background: channelColor(channelId) }} /> : <Store size={14} />}
           <span>{active ? current?.name : 'All channels'}</span>
           <ChevronDown size={13} style={{ opacity: 0.6 }} />
         </button>
@@ -196,13 +207,13 @@ function ChannelSelector() {
           <div className="pop-label">Sales channel</div>
           <button className={`pop-item${channelId === 'all' ? ' on' : ''}`} onClick={() => { setChannelId('all'); close(); }}>
             <Store size={15} />
-            <span style={{ flex: 1 }}>All channels<span className="tiny muted" style={{ display: 'block' }}>Company total</span></span>
+            <span style={{ flex: 1 }}>All channels<span className="tiny muted" style={{ display: 'block' }}>Brand total</span></span>
             {channelId === 'all' && <Check size={14} />}
           </button>
           <div className="pop-sep" />
           {available.map(c => (
             <button key={c.id} className={`pop-item${channelId === c.id ? ' on' : ''}`} onClick={() => { setChannelId(c.id); close(); }}>
-              <span className="swatch" style={{ background: SERIES_VARS[c.slot % 5], width: 10, height: 10 }} />
+              <span className="swatch" style={{ background: channelColor(c.id), width: 10, height: 10 }} />
               <span style={{ flex: 1 }}>{c.name}<span className="tiny muted" style={{ display: 'block' }}>{c.kind}</span></span>
               {channelId === c.id && <Check size={14} />}
             </button>
@@ -215,10 +226,6 @@ function ChannelSelector() {
 
 /* ── Period + comparison ───────────────────────────────────────────────── */
 
-/** The window the date inputs may select from. */
-const MIN_DATE = iso(DATA_RANGE.start);
-const MAX_DATE = iso(DATA_RANGE.end);
-
 function PeriodPicker() {
   const { periodId, setPeriodId, period, comparison, setComparison, customRange, setCustomRange } = useApp();
   const [draft, setDraft] = useState(customRange ?? { start: '', end: '' });
@@ -227,6 +234,11 @@ function PeriodPicker() {
     : PERIOD_PRESETS.find(p => p.id === periodId)?.label ?? 'This Month';
   // A preset name alone does not say which dates it resolved to.
   const rangeText = `${fmtDate(period.start)} – ${fmtDate(period.end, 'long')}`;
+
+  // Bounded to what the synced orders cover, read at render so it follows syncs.
+  const minDate = DATA_RANGE.start ? iso(DATA_RANGE.start) : undefined;
+  const maxDate = DATA_RANGE.end ? iso(DATA_RANGE.end) : undefined;
+  const first = live.meta.range?.first;
 
   return (
     <div className="hstack" style={{ gap: 6 }}>
@@ -256,17 +268,14 @@ function PeriodPicker() {
             <div style={{ padding: '4px 9px 8px' }}>
               <label className="label">Custom range</label>
               <div className="hstack" style={{ gap: 6 }}>
-                {/* Bounded to the window the fact table covers, so a range
-                    outside it cannot be picked and read as a collapse in the
-                    business rather than as missing history. */}
                 <input
                   type="date" className="input" value={draft.start}
-                  min={MIN_DATE} max={draft.end || MAX_DATE}
+                  min={minDate} max={draft.end || maxDate}
                   onChange={e => setDraft(d => ({ ...d, start: e.target.value }))}
                 />
                 <input
                   type="date" className="input" value={draft.end}
-                  min={draft.start || MIN_DATE} max={MAX_DATE}
+                  min={draft.start || minDate} max={maxDate}
                   onChange={e => setDraft(d => ({ ...d, end: e.target.value }))}
                 />
               </div>
@@ -278,8 +287,9 @@ function PeriodPicker() {
                 Apply range
               </button>
               <div className="tiny muted" style={{ marginTop: 7, lineHeight: 1.45 }}>
-                Data available {fmtDate(DATA_RANGE.start, 'long')} to {fmtDate(DATA_RANGE.end, 'long')}
-                {' '}({DATA_RANGE.days} days). Dates outside this are pulled back to the edge.
+                {first
+                  ? `Orders synced from ${fmtDate(`${first}T00:00:00`, 'long')} to today.`
+                  : 'No orders synced yet.'}
               </div>
             </div>
           </>
@@ -320,7 +330,7 @@ export function ExportMenu({ compact = false }) {
   const [done, setDone] = useState(null);
 
   const ctx = { scope, period, can, goals, companyId };
-  const companyName = companyId === 'all' ? 'All brands' : (COMPANY_BY_ID[companyId]?.name ?? companyId);
+  const companyName = COMPANY_BY_ID[companyId]?.name ?? 'Brand';
 
   const run = (id, label, close) => {
     setBusy(id);
@@ -363,11 +373,9 @@ export function ExportMenu({ compact = false }) {
       {({ close }) => (
         <>
           <div className="pop-label">Export data</div>
-          {/* The range is named before the list, because the file that lands on
-              disk is fixed to it and cannot be re-cut afterwards. */}
           <div className="tiny muted" style={{ padding: '0 10px 7px', lineHeight: 1.45 }}>
             {companyName} · {fmtDate(period.start, 'long')} to {fmtDate(period.end, 'long')}
-            {scope.channel ? ` · ${scope.channel}` : ''}
+            {scope.channel ? ` · ${CHANNEL_BY_ID[scope.channel]?.name ?? scope.channel}` : ''}
           </div>
           {QUICK_EXPORTS.filter(x => canExport(x.id, can)).map(x => (
             <button
@@ -382,7 +390,7 @@ export function ExportMenu({ compact = false }) {
           <div style={{ padding: '2px 10px 8px' }} className="tiny muted">
             {done
               ? `Downloaded: ${done}`
-              : 'Exports respect the current brand, period and channel filter. Full catalogue on the Reports page.'}
+              : 'Exports respect the current brand, period and channel filter.'}
           </div>
         </>
       )}
@@ -392,37 +400,61 @@ export function ExportMenu({ compact = false }) {
 
 /* ── Notifications ─────────────────────────────────────────────────────── */
 
+const DAY_MS = 24 * 3600 * 1000;
+
+/** Only things that are true of the connected sources right now. */
+function sourceAlerts() {
+  const out = [];
+  for (const c of live.meta.connections) {
+    const name = c.platform === 'shopify' ? `Shopify · ${c.display_name || c.external_account_id}` : c.platform;
+    if (c.status === 'error') {
+      out.push({ id: `${c.id}-err`, tone: 'critical', title: `${name} sync failed`, body: c.last_error || 'Reconnect the store to resume syncing.' });
+    } else if (!c.last_synced_at) {
+      out.push({ id: `${c.id}-never`, tone: 'warning', title: `${name} has not synced yet`, body: 'Run the first sync from Data Sources.' });
+    } else if (Date.now() - new Date(c.last_synced_at).getTime() > DAY_MS) {
+      out.push({ id: `${c.id}-stale`, tone: 'warning', title: `${name} last synced ${relativeTime(c.last_synced_at)}`, body: 'Run a sync to bring figures up to date.' });
+    }
+  }
+  if (live.status === 'ready' && !live.meta.connections.length) {
+    out.push({ id: 'none', tone: 'info', title: 'No store connected', body: 'Connect Shopify on Data Sources to populate the dashboard.' });
+  }
+  if (live.status === 'error') {
+    out.push({ id: 'load', tone: 'critical', title: 'Could not load your data', body: live.error });
+  }
+  return out;
+}
+
 function Notifications() {
-  const items = [
-    { id: 1, tone: 'critical', title: '₹7.4 L settlement unmatched', body: 'Flipkart cycle 38 is short against expected.', when: '2 hours ago' },
-    { id: 2, tone: 'warning',  title: 'Bank statement is 4 days stale', body: 'Upload the latest HDFC statement to refresh reconciliation.', when: 'Today' },
-    { id: 3, tone: 'warning',  title: 'Goal at risk — September Revenue', body: 'Forecast ₹1.30 Cr against a ₹1.37 Cr target.', when: 'Yesterday' },
-    { id: 4, tone: 'good',     title: 'Plant Protein crossed ₹5 L', body: 'Nutreats launch SKU is ramping ahead of plan.', when: '2 days ago' },
-  ];
+  const { dataVersion } = useApp();
+  const items = useMemo(() => sourceAlerts(), [dataVersion]);
+
   return (
     <Popover
       align="right" width={318}
       trigger={({ toggle }) => (
         <button className="btn btn-icon" onClick={toggle} aria-label="Notifications" style={{ position: 'relative' }}>
           <Bell size={15} />
-          <span style={{
-            position: 'absolute', top: 5, right: 6, width: 6, height: 6,
-            borderRadius: '50%', background: 'var(--critical)',
-          }} />
+          {items.length > 0 && (
+            <span style={{
+              position: 'absolute', top: 5, right: 6, width: 6, height: 6,
+              borderRadius: '50%', background: 'var(--critical)',
+            }} />
+          )}
         </button>
       )}
     >
       <>
         <div className="pop-label">Notifications</div>
-        {items.map(n => (
-          <div key={n.id} className="pop-item" style={{ alignItems: 'flex-start', cursor: 'default' }}>
+        {items.length === 0 ? (
+          <div className="pop-item tiny muted" style={{ cursor: 'default' }}>Nothing needs attention.</div>
+        ) : items.map(n => (
+          <NavLink key={n.id} to="/sources" className="pop-item" style={{ alignItems: 'flex-start' }}>
             <span style={{ marginTop: 4 }}><span className={`dot ${n.tone}`} /></span>
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontWeight: 600, fontSize: 12.5 }}>{n.title}</span>
               <span className="tiny muted" style={{ display: 'block', lineHeight: 1.4 }}>{n.body}</span>
-              <span className="tiny muted" style={{ display: 'block', marginTop: 2, opacity: 0.75 }}>{n.when}</span>
             </span>
-          </div>
+          </NavLink>
         ))}
       </>
     </Popover>
@@ -432,8 +464,9 @@ function Notifications() {
 /* ── Topbar ────────────────────────────────────────────────────────────── */
 
 function Topbar() {
-  const { theme, setTheme, setSidebarOpen, companyId, roleId, setRoleId } = useApp();
-  const company = COMPANIES.find(c => c.id === companyId);
+  const { theme, setTheme, setSidebarOpen, roleId, setRoleId } = useApp();
+  const { user, signOut } = useSession();
+  const person = user?.full_name || user?.email || '';
 
   return (
     <header className="topbar">
@@ -441,7 +474,7 @@ function Topbar() {
         <Menu size={17} />
       </button>
 
-      <CompanySelector />
+      <BrandSelector />
       <ChannelSelector />
 
       <div className="topbar-spacer" />
@@ -458,17 +491,17 @@ function Topbar() {
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
         <Popover
-          align="right" width={210}
+          align="right" width={220}
           trigger={({ toggle }) => (
             <button className="btn btn-ghost btn-icon" onClick={toggle} aria-label="Profile">
-              <span className="avatar" style={{ width: 25, height: 25, fontSize: 10 }}>VS</span>
+              <span className="avatar" style={{ width: 25, height: 25, fontSize: 10 }}>{initials(person)}</span>
             </button>
           )}
         >
           <>
             <div style={{ padding: '7px 10px 9px' }}>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{company?.ceo ?? 'Vismay Shah'}</div>
-              <div className="tiny muted">{ROLES[roleId]?.title ?? 'Chief Executive Officer'}</div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{user?.full_name || 'Signed in'}</div>
+              <div className="tiny muted">{user?.email}</div>
             </div>
             <div className="pop-sep" />
             <div className="pop-label">Viewing as</div>
@@ -489,6 +522,7 @@ function Topbar() {
             <div className="pop-sep" />
             <NavLink to="/settings" className="pop-item"><Settings2 size={14} /> Settings</NavLink>
             <NavLink to="/help" className="pop-item"><CircleHelp size={14} /> Help & support</NavLink>
+            <button className="pop-item" onClick={signOut}><LogOut size={14} /> Sign out</button>
           </>
         </Popover>
       </div>

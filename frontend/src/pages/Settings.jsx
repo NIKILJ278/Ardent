@@ -1,17 +1,64 @@
 import { useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, Plus, LogOut } from 'lucide-react';
 import { useApp } from '../state/AppState.jsx';
-import { COMPANIES } from '../data/catalog.js';
+import { useSession } from '../state/Session.jsx';
 import { PERIOD_PRESETS, COMPARISON_MODES } from '../data/engine.js';
 import { DIMENSION_BY_ID, HEALTH_SLOTS } from '../data/health.js';
-import { Card, Segmented, Pill } from '../components/ui/index.jsx';
+import { Card, Segmented, Pill, Modal } from '../components/ui/index.jsx';
+
+function AddBrand({ onClose }) {
+  const { createBrand } = useSession();
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await createBrand(name);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Add a brand"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" form="brand-form" type="submit" disabled={!name.trim() || busy}>
+            Create brand
+          </button>
+        </>
+      }
+    >
+      <form id="brand-form" className="vstack" style={{ gap: 12 }} onSubmit={submit}>
+        <div>
+          <label className="label">Brand name</label>
+          <input className="input" value={name} autoFocus onChange={e => setName(e.target.value)} />
+          <div className="tiny muted" style={{ marginTop: 5 }}>
+            A brand holds its own connected stores and their data. Nothing is shared between brands.
+          </div>
+        </div>
+        {error && <div className="auth-error">{error}</div>}
+      </form>
+    </Modal>
+  );
+}
 
 export default function Settings() {
   const {
     theme, setTheme, companyId, setCompanyId, healthConfig, setHealthConfig,
     periodId, setPeriodId, comparison, setComparison,
   } = useApp();
+  const { user, brands, signOut } = useSession();
   const [draft, setDraft] = useState(healthConfig.weights);
+  const [adding, setAdding] = useState(false);
   const total = healthConfig.dimensions.reduce((s, id) => s + (draft[id] ?? 0), 0);
 
   return (
@@ -19,9 +66,51 @@ export default function Settings() {
       <div>
         <h1 style={{ fontSize: 20 }}>Settings</h1>
         <p className="muted small" style={{ margin: '3px 0 0' }}>
-          Defaults, appearance and how Company Health is scored.
+          Your account, your brands, and how Company Health is scored.
         </p>
       </div>
+
+      <Card title="Account" subtitle="Who you are signed in as">
+        <div className="spread" style={{ flexWrap: 'wrap', gap: 12 }}>
+          <div className="hstack" style={{ gap: 11 }}>
+            <span className="avatar" style={{ borderRadius: 9 }}>
+              {(user?.full_name || user?.email || '?').slice(0, 2).toUpperCase()}
+            </span>
+            <span>
+              <span className="small" style={{ fontWeight: 600, display: 'block' }}>
+                {user?.full_name || 'Your account'}
+              </span>
+              <span className="tiny muted">{user?.email}</span>
+            </span>
+          </div>
+          <button className="btn" onClick={signOut}><LogOut size={13} /> Sign out</button>
+        </div>
+      </Card>
+
+      <Card
+        title="Brands"
+        subtitle="Each brand holds its own connected stores"
+        actions={<button className="btn btn-sm" onClick={() => setAdding(true)}><Plus size={12} /> Add brand</button>}
+      >
+        <div className="vstack" style={{ gap: 2 }}>
+          {brands.map(b => (
+            <div className="spread" key={b.id} style={{ padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+              <span className="hstack" style={{ gap: 10 }}>
+                <span className="avatar" style={{ borderRadius: 7 }}>{b.name.slice(0, 2).toUpperCase()}</span>
+                <span>
+                  <span className="small" style={{ fontWeight: 500, display: 'block' }}>{b.name}</span>
+                  <span className="tiny muted">
+                    {[b.industry, b.currency, b.role].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+              </span>
+              {companyId === b.id
+                ? <Pill tone="info">Active</Pill>
+                : <button className="btn btn-sm" onClick={() => setCompanyId(b.id)}>Switch</button>}
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <Card title="Appearance" subtitle="Applies to this browser">
         <div className="spread">
@@ -35,13 +124,6 @@ export default function Settings() {
 
       <Card title="Defaults" subtitle="What loads when you open Ardent">
         <div className="vstack" style={{ gap: 15 }}>
-          <div className="spread" style={{ flexWrap: 'wrap', gap: 10 }}>
-            <span className="small">Default company</span>
-            <select className="input" style={{ width: 220 }} value={companyId} onChange={e => setCompanyId(e.target.value)}>
-              {COMPANIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              <option value="all">All Brands</option>
-            </select>
-          </div>
           <div className="spread" style={{ flexWrap: 'wrap', gap: 10 }}>
             <span className="small">Default period</span>
             <select className="input" style={{ width: 220 }} value={periodId} onChange={e => setPeriodId(e.target.value)}>
@@ -76,7 +158,9 @@ export default function Settings() {
         }
       >
         <p className="tiny muted" style={{ margin: '0 0 14px' }}>
-          Which indicators appear is chosen on the Overview, under View health breakdown.
+          Which indicators appear is chosen on the Overview, under View health breakdown. An
+          indicator whose data is not connected is left out of the score entirely, whatever weight
+          it carries here.
         </p>
         <div className="vstack" style={{ gap: 14 }}>
           {healthConfig.dimensions.map(id => {
@@ -121,27 +205,7 @@ export default function Settings() {
         </div>
       </Card>
 
-      <Card title="Companies" subtitle="Brands in this workspace">
-        <div className="vstack" style={{ gap: 2 }}>
-          {COMPANIES.map(c => (
-            <div className="spread" key={c.id} style={{ padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-              <span className="hstack" style={{ gap: 10 }}>
-                <span className="avatar" style={{ borderRadius: 7 }}>{c.name.slice(0, 2).toUpperCase()}</span>
-                <span>
-                  <span className="small" style={{ fontWeight: 500, display: 'block' }}>{c.name}</span>
-                  <span className="tiny muted">{c.legalName} · {c.gstin}</span>
-                </span>
-              </span>
-              <span className="hstack" style={{ gap: 9 }}>
-                <span className="tiny muted">{c.sector}</span>
-                {companyId === c.id
-                  ? <Pill tone="info">Active</Pill>
-                  : <button className="btn btn-sm" onClick={() => setCompanyId(c.id)}>Switch</button>}
-              </span>
-            </div>
-          ))}
-        </div>
-      </Card>
+      {adding && <AddBrand onClose={() => setAdding(false)} />}
     </div>
   );
 }

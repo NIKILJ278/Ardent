@@ -5,14 +5,12 @@ import {
 import { useDrill } from '../../state/Drilldown.jsx';
 import { useApp } from '../../state/AppState.jsx';
 import {
-  totals, groupBy, series, financials, skuBreakdown, transactionsFor,
-  targetFor, budgetFor, forecastFor,
+  totals, groupBy, series, financials, salesModel, skuBreakdown, forecastFor,
 } from '../../data/engine.js';
-import {
-  CHANNEL_BY_ID, PRODUCT_BY_ID, COMPANY_BY_ID,
-} from '../../data/catalog.js';
-import { inr, inrExact, num, pct, fmtDate, changePct } from '../../lib/format.js';
+import { CHANNEL_BY_ID, PRODUCT_BY_ID, COMPANY_BY_ID, variantById } from '../../data/catalog.js';
+import { money, num, pct, fmtDate, changePct } from '../../lib/format.js';
 import { DataTable, BarList, Pill, Delta, Card } from '../ui/index.jsx';
+import { NotConnected } from '../ui/NotConnected.jsx';
 import { RevenueTrend } from '../charts/index.jsx';
 import { ExportMenu } from '../shell/Shell.jsx';
 import { channelColor } from '../../lib/channels.js';
@@ -22,18 +20,18 @@ const LEVEL_ICON = {
   product: Package, sku: Package, transactions: Receipt,
 };
 
-/* ── Comparison strip: vs target / previous / year / budget / forecast ─── */
+/* ── Comparison strip ──────────────────────────────────────────────────────
+   Two honest bases: the previous period, which is measured, and a straight-line
+   forecast of this one, which is arithmetic on the real run-rate. Targets and
+   budgets were fixed multiples of the actuals — comparing the business against
+   itself — and are gone until a goal supplies one.
+   ──────────────────────────────────────────────────────────────────────── */
 
-function CompareStrip({ value, companyId, period, prevValue }) {
-  const target = targetFor(companyId, value);
-  const budget = budgetFor(companyId, value);
+function CompareStrip({ value, period, prevValue }) {
   const forecast = forecastFor(period, value);
-
   const rows = [
-    { label: 'vs Target',          base: target,    note: inr(target) },
-    { label: 'vs Previous Period', base: prevValue, note: inr(prevValue) },
-    { label: 'vs Budget',          base: budget,    note: inr(budget) },
-    { label: 'vs Forecast',        base: forecast,  note: inr(forecast) },
+    { label: 'vs Previous Period', base: prevValue, note: money(prevValue) },
+    { label: 'vs Projected Full Period', base: forecast, note: money(forecast) },
   ];
 
   return (
@@ -74,14 +72,14 @@ function Derivation({ rows, result }) {
             fontWeight: r.strong ? 600 : 500,
             color: r.negative ? 'var(--critical-ink)' : 'var(--ink)',
           }}>
-            {r.negative ? '−' : ''}{inr(Math.abs(r.value))}
+            {r.negative ? '−' : ''}{money(Math.abs(r.value))}
           </span>
         </div>
       ))}
       {result && (
         <div className="spread" style={{ marginTop: 8, paddingTop: 10, borderTop: '2px solid var(--border-strong)' }}>
           <span style={{ fontWeight: 600 }}>{result.label}</span>
-          <span className="tnum" style={{ fontWeight: 700, fontSize: 15 }}>{inr(result.value)}</span>
+          <span className="tnum" style={{ fontWeight: 700, fontSize: 15 }}>{money(result.value)}</span>
         </div>
       )}
     </div>
@@ -92,13 +90,13 @@ function Derivation({ rows, result }) {
 
 export default function DrilldownPanel() {
   const { stack, push, back, goTo, close, isOpen } = useDrill();
-  const { companyId, period, prevScope } = useApp();
+  const { period, prevScope } = useApp();
   const node = stack[stack.length - 1];
 
   const body = useMemo(() => {
     if (!node) return null;
-    return renderLevel({ node, push, companyId, period, prevScope });
-  }, [node, push, companyId, period, prevScope]);
+    return renderLevel({ node, push, period, prevScope });
+  }, [node, push, period, prevScope]);
 
   if (!isOpen || !node) return null;
   const Icon = LEVEL_ICON[node.type] ?? Layers;
@@ -147,63 +145,50 @@ export default function DrilldownPanel() {
 
 /* ── Level renderers ───────────────────────────────────────────────────── */
 
-function renderLevel({ node, push, companyId, period, prevScope }) {
+function renderLevel({ node, push, period, prevScope }) {
   switch (node.type) {
-    case 'metric':      return <MetricLevel  node={node} push={push} companyId={companyId} period={period} prevScope={prevScope} />;
-    case 'channel':     return <SplitLevel   node={node} push={push} dimension={companyId === 'all' ? 'company' : 'category'} />;
-    case 'brand':       return <SplitLevel   node={node} push={push} dimension="category" />;
-    case 'category':    return <SplitLevel   node={node} push={push} dimension="product" />;
-    case 'product':     return <ProductLevel node={node} push={push} />;
-    case 'sku':         return <SkuLevel     node={node} />;
-    default:            return null;
+    case 'metric':   return <MetricLevel  node={node} push={push} period={period} prevScope={prevScope} />;
+    case 'channel':  return <SplitLevel   node={node} push={push} dimension="category" />;
+    case 'brand':    return <SplitLevel   node={node} push={push} dimension="category" />;
+    case 'category': return <SplitLevel   node={node} push={push} dimension="product" />;
+    case 'product':  return <ProductLevel node={node} push={push} />;
+    case 'sku':      return <SkuLevel     node={node} />;
+    default:         return null;
   }
 }
 
 /* Top level — a KPI was clicked. */
-function MetricLevel({ node, push, companyId, period, prevScope }) {
+function MetricLevel({ node, push, period, prevScope }) {
   const scope = node.scope;
   const fin = financials(scope);
   const prevFin = financials({ ...prevScope });
-  const metric = node.metric ?? 'net';
+  const metric = node.metric ?? 'netSales';
 
-  const value = fin[metric] ?? fin.net;
-  const prevValue = prevFin[metric] ?? prevFin.net;
+  const value = fin[metric] ?? fin.netSales;
+  const prevValue = prevFin[metric] ?? prevFin.netSales;
 
   const byChannel = groupBy(scope, 'channel');
   const chartData = series(scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
 
-  // Metrics that are composed rather than summed get an explicit derivation.
+  // Composed figures get an explicit derivation. Only the ones real order data
+  // can build are offered — there is no EBITDA or net profit to take apart.
   const DERIVATIONS = {
-    net: {
+    netSales: {
       rows: [
-        { label: 'Gross sales',            value: fin.gross },
-        { label: 'Discounts & promotions', value: fin.discount,     negative: true },
-        { label: 'Marketplace fees',       value: fin.fees,         negative: true },
-        { label: 'Shipping & fulfilment',  value: fin.shipping,     negative: true },
-        { label: 'Returns & RTO',          value: fin.returnsValue, negative: true },
+        { label: 'Gross sales',   value: fin.grossSales },
+        { label: 'Cancellations', value: fin.cancelValue,  negative: true },
+        { label: 'Discounts',     value: fin.discount,     negative: true },
+        { label: 'Returns',       value: fin.returnsValue, negative: true },
       ],
-      result: { label: 'Net revenue', value: fin.net },
+      result: { label: 'Net sales', value: fin.netSales },
     },
-    ebitda: {
+    grossProfit: fin.costComplete ? {
       rows: [
-        { label: 'Net revenue',        value: fin.net, strong: true },
-        { label: 'Cost of goods sold', value: fin.cogs,      negative: true },
-        { label: 'Marketing',          value: fin.marketing, negative: true },
-        { label: 'Salaries',           value: fin.salaries,  negative: true },
-        { label: 'Logistics',          value: fin.logistics, negative: true },
-        { label: 'Overheads',          value: fin.overheads, negative: true },
+        { label: 'Net sales',     value: fin.netSales, strong: true },
+        { label: 'Cost of goods', value: fin.cogs, negative: true },
       ],
-      result: { label: 'EBITDA', value: fin.ebitda },
-    },
-    netProfit: {
-      rows: [
-        { label: 'EBITDA',       value: fin.ebitda, strong: true },
-        { label: 'Depreciation', value: fin.depreciation, negative: true },
-        { label: 'Interest',     value: fin.interest,     negative: true },
-        { label: 'Tax',          value: fin.tax,          negative: true },
-      ],
-      result: { label: 'Net profit', value: fin.netProfit },
-    },
+      result: { label: 'Gross margin', value: fin.grossProfit },
+    } : null,
   };
   const derivation = DERIVATIONS[metric];
   const isCurrency = node.format !== 'pct' && node.format !== 'months';
@@ -212,22 +197,25 @@ function MetricLevel({ node, push, companyId, period, prevScope }) {
     <div className="vstack" style={{ gap: 16 }}>
       <div>
         <div style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>
-          {node.format === 'pct' ? pct(value)
+          {value == null ? 'Not connected'
+            : node.format === 'pct' ? pct(value)
             : node.format === 'months' ? `${value.toFixed(1)} months`
-            : inr(value)}
+            : money(value)}
         </div>
         <div className="hstack" style={{ gap: 8, marginTop: 4 }}>
           <Delta value={changePct(value, prevValue)} invert={node.invert} />
-          <span className="tiny muted">vs previous period ({node.format === 'pct' ? pct(prevValue) : inr(prevValue)})</span>
+          <span className="tiny muted">
+            vs previous period ({node.format === 'pct' ? pct(prevValue) : money(prevValue)})
+          </span>
         </div>
       </div>
 
-      {isCurrency && (
-        <CompareStrip value={value} companyId={companyId} period={period} prevValue={prevValue} />
+      {isCurrency && value != null && (
+        <CompareStrip value={value} period={period} prevValue={prevValue} />
       )}
 
       {derivation && (
-        <Card title="How this number is built" subtitle="Every line is summed from source transactions">
+        <Card title="How this number is built" subtitle="Every line is summed from your synced orders">
           <Derivation rows={derivation.rows} result={derivation.result} />
         </Card>
       )}
@@ -238,28 +226,26 @@ function MetricLevel({ node, push, companyId, period, prevScope }) {
         </Card>
       )}
 
-      <Card
-        title="Contribution by channel"
-        subtitle="Select a channel to keep drilling"
-        flush
-      >
-        <div style={{ padding: 16 }}>
-          <BarList
-            items={byChannel.map(c => ({
-              key: c.key,
-              label: CHANNEL_BY_ID[c.key]?.name ?? c.key,
-              value: c.net,
-              color: channelColor(c.key),
-            }))}
-            formatValue={inr}
-            onItemClick={(it) => push({
-              type: 'channel',
-              label: it.label,
-              scope: { ...node.scope, channel: it.key },
-            })}
-          />
-        </div>
-      </Card>
+      {byChannel.length > 0 && (
+        <Card title="Contribution by channel" subtitle="Select a channel to keep drilling" flush>
+          <div style={{ padding: 16 }}>
+            <BarList
+              items={byChannel.map(c => ({
+                key: c.key,
+                label: CHANNEL_BY_ID[c.key]?.name ?? c.key,
+                value: c.net,
+                color: channelColor(c.key),
+              }))}
+              formatValue={money}
+              onItemClick={(it) => push({
+                type: 'channel',
+                label: it.label,
+                scope: { ...node.scope, channel: it.key },
+              })}
+            />
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -276,48 +262,44 @@ function SplitLevel({ node, push, dimension }) {
     : dimension === 'product' ? (PRODUCT_BY_ID[key]?.name ?? key)
     : key;
 
+  const data = rows.map(r => ({
+    id: r.key, key: r.key, name: nameOf(r.key),
+    units: r.units, orders: r.orders, net: r.net,
+    returnPct: r.grossSales ? (r.returnsValue / r.grossSales) * 100 : 0,
+    // A margin is only shown where every unit in the row carried a cost.
+    margin: r.costGaps === 0 ? r.net - r.cogs : null,
+    marginPct: r.costGaps === 0 && r.net ? ((r.net - r.cogs) / r.net) * 100 : null,
+    share: t.net ? (r.net / t.net) * 100 : 0,
+  }));
+
   const columns = [
     {
       key: 'name',
       label: dimension === 'company' ? 'Brand' : dimension === 'product' ? 'Product' : 'Category',
-      render: r => (
-        <span className="hstack" style={{ gap: 7 }}>
-          <span style={{ fontWeight: 500 }}>{r.name}</span>
-          {r.isNew && <Pill tone="info" icon={false}>New</Pill>}
-        </span>
-      ),
+      render: r => <span style={{ fontWeight: 500 }}>{r.name}</span>,
     },
     { key: 'units',  label: 'Units',      align: 'right', render: r => num(r.units) },
     { key: 'orders', label: 'Orders',     align: 'right', render: r => num(r.orders) },
-    { key: 'net',    label: 'Net revenue',align: 'right', render: r => <strong>{inr(r.net)}</strong> },
-    { key: 'margin', label: 'Margin',     align: 'right', render: r => inr(r.margin) },
+    { key: 'net',    label: 'Net sales',  align: 'right', render: r => <strong>{money(r.net)}</strong> },
+    { key: 'returnPct', label: 'Return %', align: 'right', render: r => pct(r.returnPct) },
     {
       key: 'marginPct', label: 'Margin %', align: 'right',
-      render: r => <span style={{ color: r.marginPct >= 25 ? 'var(--good-ink)' : r.marginPct >= 12 ? 'var(--ink)' : 'var(--critical-ink)' }}>{pct(r.marginPct)}</span>,
+      render: r => (r.marginPct == null
+        ? <span className="tiny muted">no unit cost</span>
+        : <span style={{ color: r.marginPct >= 25 ? 'var(--good-ink)' : r.marginPct >= 12 ? 'var(--ink)' : 'var(--critical-ink)' }}>{pct(r.marginPct)}</span>),
     },
     { key: 'share', label: 'Share', align: 'right', render: r => pct(r.share) },
   ];
-
-  const data = rows.map(r => {
-    const product = dimension === 'product' ? PRODUCT_BY_ID[r.key] : null;
-    return {
-      id: r.key, key: r.key, name: nameOf(r.key),
-      units: r.units, orders: r.orders, net: r.net, margin: r.margin,
-      marginPct: r.net ? (r.margin / r.net) * 100 : 0,
-      share: t.net ? (r.net / t.net) * 100 : 0,
-      isNew: !!product?.launchedOn,
-    };
-  });
 
   return (
     <div className="vstack" style={{ gap: 16 }}>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
         {[
-          { l: 'Net revenue', v: inr(t.net) },
-          { l: 'Gross sales', v: inr(t.gross) },
+          { l: 'Net sales',   v: money(t.net) },
+          { l: 'Gross sales', v: money(t.grossSales) },
           { l: 'Units',       v: num(t.units) },
           { l: 'Orders',      v: num(t.orders) },
-          { l: 'Margin',      v: inr(t.margin) },
+          { l: 'Returns',     v: money(t.returnsValue) },
         ].map(k => (
           <div key={k.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
             <div className="tiny muted">{k.l}</div>
@@ -352,22 +334,22 @@ function SplitLevel({ node, push, dimension }) {
   );
 }
 
-/** Product → SKUs. */
+/** Product → its real variants. */
 function ProductLevel({ node, push }) {
   const t = totals(node.scope);
+  const m = salesModel(node.scope);
   const skus = skuBreakdown(node.scope);
-  const product = PRODUCT_BY_ID[node.scope.product];
   const chartData = series(node.scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
 
   return (
     <div className="vstack" style={{ gap: 16 }}>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
         {[
-          { l: 'Net revenue', v: inr(t.net) },
-          { l: 'Units',       v: num(t.units) },
-          { l: 'Selling price', v: inrExact(product?.price) },
-          { l: 'Margin',      v: inr(t.margin) },
-          { l: 'Margin %',    v: pct(t.net ? (t.margin / t.net) * 100 : 0) },
+          { l: 'Net sales', v: money(m.netSales) },
+          { l: 'Units',     v: num(t.units) },
+          { l: 'ASP',       v: money(m.asp) },
+          { l: 'Return %',  v: pct(m.returnPct) },
+          { l: 'Gross margin', v: m.known.cogs ? money(m.grossMargin) : 'not connected' },
         ].map(k => (
           <div key={k.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
             <div className="tiny muted">{k.l}</div>
@@ -376,27 +358,20 @@ function ProductLevel({ node, push }) {
         ))}
       </div>
 
-      {product?.launchedOn && (
-        <div className="hstack" style={{ gap: 8, padding: '10px 12px', background: 'var(--accent-soft)', borderRadius: 'var(--radius-sm)' }}>
-          <Pill tone="info" icon={false}>New product</Pill>
-          <span className="small">Launched {fmtDate(product.launchedOn, 'long')}</span>
-        </div>
-      )}
-
       {chartData.length > 1 && (
         <Card title="Daily revenue"><RevenueTrend data={chartData} height={190} showCompare={false} /></Card>
       )}
 
-      <Card title="SKU breakdown" subtitle="Select a SKU to see its transactions" flush>
+      <Card title="Variants" subtitle="Each row is summed from that variant's own order lines" flush>
         <DataTable
           columns={[
             { key: 'code',  label: 'SKU', render: r => <span className="mono">{r.code}</span> },
             { key: 'label', label: 'Variant' },
             { key: 'units', label: 'Units', align: 'right', render: r => num(r.units) },
-            { key: 'net',   label: 'Net revenue', align: 'right', render: r => <strong>{inr(r.net)}</strong> },
-            { key: 'share', label: 'Share', align: 'right', render: r => pct(r.ratio * 100) },
+            { key: 'net',   label: 'Net sales', align: 'right', render: r => <strong>{money(r.net)}</strong> },
+            { key: 'share', label: 'Share', align: 'right', render: r => pct(r.share) },
           ]}
-          rows={skus.map(s => ({ ...s, share: s.ratio * 100 }))}
+          rows={skus.map(s => ({ ...s, share: m.netSales ? (s.net / m.netSales) * 100 : 0 }))}
           searchable={false}
           pageSize={10}
           onRowClick={(r) => push({
@@ -405,31 +380,31 @@ function ProductLevel({ node, push }) {
             scope: node.scope,
             sku: r,
           })}
+          emptyText="No variants sold in this period"
         />
       </Card>
     </div>
   );
 }
 
-/** SKU → transactions (the bottom of the drill). */
+/** Variant — the deepest level the synced data reaches. */
 function SkuLevel({ node }) {
   const { sku, scope } = node;
-  const rows = transactionsFor({
-    skuId: sku.id, productId: scope.product, channel: scope.channel,
-    start: scope.start, end: scope.end, limit: 200,
-  });
-  const sum = rows.reduce((s, r) => s + r.net, 0);
-
-  const STATUS_TONE = { Delivered: 'good', 'In Transit': 'info', Returned: 'warning', RTO: 'critical' };
+  const variantScope = { ...scope, variant: sku.id };
+  const m = salesModel(variantScope);
+  const t = totals(variantScope);
+  const meta = variantById(sku.id);
+  const daily = series(variantScope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
 
   return (
     <div className="vstack" style={{ gap: 16 }}>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))' }}>
         {[
-          { l: 'Transactions', v: num(rows.length) },
-          { l: 'Units',        v: num(rows.reduce((s, r) => s + r.qty, 0)) },
-          { l: 'Net value',    v: inr(sum) },
-          { l: 'SKU',          v: sku.code },
+          { l: 'Units',     v: num(t.units) },
+          { l: 'Orders',    v: num(t.orders) },
+          { l: 'Net sales', v: money(m.netSales) },
+          { l: 'ASP',       v: money(m.asp) },
+          { l: 'Return %',  v: pct(m.returnPct) },
         ].map(k => (
           <div key={k.l} style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '9px 11px', background: 'var(--surface-2)' }}>
             <div className="tiny muted">{k.l}</div>
@@ -438,28 +413,30 @@ function SkuLevel({ node }) {
         ))}
       </div>
 
-      <Card
-        title="Source transactions"
-        subtitle="The lowest level Ardent holds — matched to the platform's own report"
-        flush
-      >
-        <DataTable
-          columns={[
-            { key: 'id',      label: 'Order ID', render: r => <span className="mono">{r.id}</span> },
-            { key: 'date',    label: 'Date',     render: r => fmtDate(r.ts) },
-            { key: 'city',    label: 'Location', render: r => <span>{r.city} <span className="muted tiny">{r.state}</span></span> },
-            { key: 'qty',     label: 'Qty',      align: 'right' },
-            { key: 'gross',   label: 'Gross',    align: 'right', render: r => inrExact(r.gross) },
-            { key: 'fee',     label: 'Fees',     align: 'right', render: r => <span className="muted">−{inrExact(r.fee)}</span> },
-            { key: 'net',     label: 'Net',      align: 'right', render: r => <strong>{inrExact(r.net)}</strong> },
-            { key: 'payment', label: 'Payment',  render: r => <span className="small muted">{r.payment}</span> },
-            { key: 'status',  label: 'Status',   render: r => <Pill tone={STATUS_TONE[r.status] ?? 'neutral'}>{r.status}</Pill> },
-          ]}
-          rows={rows}
-          initialSort={{ key: 'date', dir: 'desc' }}
-          pageSize={15}
-          searchKeys={['id', 'city', 'status', 'payment']}
-        />
+      <div className="hstack" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Pill tone="neutral" icon={false}>SKU {sku.code}</Pill>
+        {meta?.title && <Pill tone="neutral" icon={false}>{meta.title}</Pill>}
+        <Pill tone={m.known.cogs ? 'good' : 'neutral'} icon={false}>
+          {m.known.cogs ? `Cost of goods ${money(m.cogs)}` : 'No unit cost'}
+        </Pill>
+      </div>
+
+      {daily.length > 1 && (
+        <Card title="Daily revenue for this variant">
+          <RevenueTrend data={daily} height={190} showCompare={false} />
+        </Card>
+      )}
+
+      <Card title="Source transactions">
+        <NotConnected
+          title="Individual order lines"
+          needs="an orders endpoint on the Ardent backend"
+          showLink={false}
+        >
+          Ardent stores your orders, but this panel reads the aggregated fact table, which sums
+          them by day and variant. The order-by-order list is the next thing to expose — until it
+          is, these figures are the deepest level available.
+        </NotConnected>
       </Card>
     </div>
   );

@@ -1,13 +1,12 @@
 import { ArrowRight, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card, Pill, Delta, Segmented } from '../ui/index.jsx';
-import { inr, num, pct } from '../../lib/format.js';
+import { money, num, pct } from '../../lib/format.js';
 
 /* ── Revenue: GMV to final realized sales ──────────────────────────────────
-   The hero. It reuses the ladder language the Sales page already uses, so the
-   CEO meets the same shape wherever a deduction stack appears — but here the
-   three anchor figures are lifted out above it, because the point of this
-   section is the journey's start, middle and end, not the individual lines.
+   The hero. GMV down to net sales is real. The rows below net sales need your
+   payment gateway and courier data, so they are listed with no figure — the
+   gap is visible rather than filled with an assumed rate.
    ──────────────────────────────────────────────────────────────────────── */
 
 export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }) {
@@ -30,25 +29,48 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
       <div className="rev-anchors">
         <div className="rev-anchor lead">
           <span className="rev-anchor-label">GMV</span>
-          <span className="rev-anchor-value">{inr(ladder.gmv)}</span>
+          <span className="rev-anchor-value">{money(ladder.gmv)}</span>
           {delta != null && <Delta value={delta} />}
         </div>
         <span className="rev-arrow">→</span>
         <div className="rev-anchor">
           <span className="rev-anchor-label">Net Sales</span>
-          <span className="rev-anchor-value mid">{inr(ladder.netSales)}</span>
-          <span className="tiny muted">{pct((ladder.netSales / peak) * 100)} of GMV</span>
+          <span className="rev-anchor-value mid">{money(ladder.netSales)}</span>
+          <span className="tiny muted">{pct(ladder.netSalesPct)} of GMV</span>
         </div>
         <span className="rev-arrow">→</span>
         <div className="rev-anchor">
           <span className="rev-anchor-label">Final Realized Sales</span>
-          <span className="rev-anchor-value final">{inr(ladder.realized)}</span>
-          <span className="tiny muted">{pct(ladder.realizedPct)} of GMV</span>
+          {ladder.realizedKnown ? (
+            <>
+              <span className="rev-anchor-value final">{money(ladder.realized)}</span>
+              <span className="tiny muted">{pct(ladder.realizedPct)} of GMV</span>
+            </>
+          ) : (
+            <>
+              <span className="rev-anchor-value unknown">Not connected</span>
+              <span className="tiny muted">needs gateway and courier costs</span>
+            </>
+          )}
         </div>
       </div>
 
       <div className="ladder rev-ladder">
         {ladder.rows.map(r => {
+          const missing = r.kind === 'missing' || r.missing;
+          if (missing) {
+            return (
+              <div className="ladder-row missing" key={r.id}>
+                <span className="ladder-label">
+                  {r.kind === 'missing' && <span className="ladder-minus">−</span>}
+                  {r.label}
+                </span>
+                <span className="ladder-bar" />
+                <span className="ladder-value"><span className="ladder-missing-tag">not connected</span></span>
+                <span className="ladder-pct" />
+              </div>
+            );
+          }
           const isCost = r.kind === 'deduct';
           const tone =
             r.kind === 'total' ? 'good'
@@ -64,7 +86,7 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
                 <span className={`ladder-fill ${tone}`}
                       style={{ width: `${Math.max(1, (Math.abs(r.value) / peak) * 100)}%` }} />
               </span>
-              <span className={`ladder-value ${isCost ? 'cost' : ''}`}>{inr(Math.abs(r.value))}</span>
+              <span className={`ladder-value ${isCost ? 'cost' : ''}`}>{money(Math.abs(r.value))}</span>
               <span className="ladder-pct">{r.id === 'gmv' ? '' : pct(r.pct)}</span>
             </div>
           );
@@ -72,8 +94,8 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
       </div>
 
       <div className="ladder-foot">
-        Every percentage is a share of GMV, so the lines compare directly.
-        {' '}{inr(ladder.totalDeductions)} of {inr(ladder.gmv)} never reaches the company.
+        Every percentage is a share of GMV. {money(ladder.knownDeductions)} of {money(ladder.gmv)} comes off
+        before net sales; the charges after net sales need your payment gateway and courier data.
       </div>
     </Card>
   );
@@ -104,11 +126,7 @@ function ProductList({ rows, value, meta, tone, empty }) {
   );
 }
 
-export function ProductIntelligence({ intel, onOpen }) {
-  const viewAll = (
-    <Link to="/sales" className="linkish">View all <ArrowRight size={13} /></Link>
-  );
-
+export function ProductIntelligence({ intel }) {
   return (
     <div>
       <div className="spread" style={{ alignItems: 'baseline', marginBottom: 10 }}>
@@ -118,10 +136,11 @@ export function ProductIntelligence({ intel, onOpen }) {
         </span>
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(288px,1fr))' }}>
-        <Card title="Top products" subtitle="Carrying the period" actions={viewAll}>
+        <Card title="Top products" subtitle="Carrying the period"
+              actions={<Link to="/sales" className="linkish">View all <ArrowRight size={13} /></Link>}>
           <ProductList
             rows={intel.top} tone="good"
-            value={r => ({ n: r.netSales, text: inr(r.netSales) })}
+            value={r => ({ n: r.netSales, text: money(r.netSales) })}
             meta={r => (r.growth == null ? null : <Delta value={r.growth} showIcon={false} />)}
             empty="No products sold in this period."
           />
@@ -130,23 +149,83 @@ export function ProductIntelligence({ intel, onOpen }) {
         <Card title="Least-selling products" subtitle="Not paying their way">
           <ProductList
             rows={intel.weak} tone="muted"
-            value={r => ({ n: r.netSales, text: inr(r.netSales) })}
+            value={r => ({ n: r.netSales, text: money(r.netSales) })}
             meta={r => (r.growth == null ? null : <Delta value={r.growth} showIcon={false} />)}
-            empty="Nothing under-performing."
+            empty="Not enough products to rank a bottom list yet."
           />
         </Card>
 
-        <Card title="Major return products" subtitle="Ranked by rate, filtered to material value">
+        <Card title="Major return products" subtitle="By variant, filtered to material value">
           <ProductList
             rows={intel.returns} tone="critical"
             value={r => ({ n: r.returnPct, text: pct(r.returnPct) })}
-            meta={r => <span className="tiny muted tnum">{inr(r.returnValue)}</span>}
-            empty="No material return problem."
+            meta={r => <span className="tiny muted tnum">{money(r.returnValue)}</span>}
+            empty="No material returns in this period."
           />
         </Card>
       </div>
-      {onOpen && null}
     </div>
+  );
+}
+
+/* ── Markets: the currencies customers actually paid in ────────────────────
+   A store selling abroad takes money in several currencies, and Shopify
+   converts each order into the shop's own currency at that order's rate. Those
+   converted figures are what every other number on this page is built from.
+
+   This card shows the spread underneath them. The per-currency totals are
+   listed and never added up: summing currencies needs exchange rates, and no
+   connected source supplies one.
+   ──────────────────────────────────────────────────────────────────────── */
+
+const MARKET_COLOR = (i) => `var(--series-${(i % 6) + 1})`;
+
+export function MarketMix({ markets, reporting }) {
+  if (!markets?.length) return null;
+  const totalOrders = markets.reduce((s, m) => s + m.orders, 0) || 1;
+
+  return (
+    <Card
+      title="Markets"
+      subtitle="What your customers paid in"
+      actions={<span className="tiny muted">Reported to you in {reporting}</span>}
+    >
+      <div className="rs-bar" role="img" aria-label="Share of orders by currency">
+        {markets.map((m, i) => (
+          <span
+            key={m.currency}
+            className="rs-seg"
+            style={{ width: `${(m.orders / totalOrders) * 100}%`, background: MARKET_COLOR(i) }}
+            title={`${m.currency} — ${num(m.orders)} order(s)`}
+          />
+        ))}
+      </div>
+
+      <div className="vstack" style={{ gap: 8, marginTop: 13 }}>
+        {markets.map((m, i) => (
+          <div className="spread" key={m.currency}>
+            <span className="hstack" style={{ gap: 8, minWidth: 0 }}>
+              <span className="swatch" style={{ background: MARKET_COLOR(i) }} />
+              <span className="small" style={{ fontWeight: 500 }}>{m.currency}</span>
+              {m.currency === reporting && <Pill tone="neutral" icon={false}>store currency</Pill>}
+            </span>
+            <span className="hstack" style={{ gap: 14 }}>
+              <span className="tiny muted tnum">{num(m.orders)} orders</span>
+              <span className="small tnum" style={{ fontWeight: 600, minWidth: 52, textAlign: 'right' }}>
+                {pct((m.orders / totalOrders) * 100)}
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="ladder-foot">
+        Each row is what customers were charged in their own currency, so the amounts are listed
+        rather than added — a total across currencies would need exchange rates that no connected
+        source supplies. Every other figure on this page is in {reporting}, converted by Shopify at
+        each order's own rate.
+      </div>
+    </Card>
   );
 }
 
@@ -181,7 +260,7 @@ export function Readings({ items }) {
 
 export function FinancialFigure({ label, value, sub, tone, onClick }) {
   return (
-    <button className={`fin-fig${tone ? ` ${tone}` : ''}`} onClick={onClick} type="button">
+    <button className={`fin-fig${tone ? ` ${tone}` : ''}`} onClick={onClick} type="button" disabled={!onClick}>
       <span className="fin-fig-label">{label}</span>
       <span className="fin-fig-value tnum">{value}</span>
       {sub && <span className="fin-fig-sub">{sub}</span>}
@@ -209,8 +288,6 @@ export function EventPointers({ pointers }) {
               <span className="ev-why muted">Unexplained — no event logged for this month</span>
             )}
           </span>
-          {/* The event's own measured effect, kept separate from the month's
-              movement so the two are never confused for one another. */}
           {p.impact && (
             <span className="ev-impact" title={`${p.impact.channel}: average daily revenue in the ${p.impact.windowDays} days from the event against the ${p.impact.windowDays} before`}>
               {p.impact.channel} {p.impact.changePct >= 0 ? '+' : '−'}{Math.abs(p.impact.changePct).toFixed(0)}%

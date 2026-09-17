@@ -6,9 +6,7 @@ import {
   watchableMetrics, WATCH_METRICS, WINDOW_CHOICES, formatMetric,
   evaluateWatch, watchScopeLabel,
 } from '../../data/watchlist.js';
-import { OWNERS } from '../../data/business.js';
-import { PRODUCT_BY_ID, skusForProduct } from '../../data/catalog.js';
-import { iso, fmtDate } from '../../lib/format.js';
+import { iso, fmtDate, currencySymbol } from '../../lib/format.js';
 
 /**
  * Put a metric under watch from wherever it is being read.
@@ -19,7 +17,7 @@ import { iso, fmtDate } from '../../lib/format.js';
  * remember the reason for.
  */
 export function WatchForm({ subject, onClose }) {
-  const { addWatch, companyId, today, can } = useApp();
+  const { addWatch, companyId, today, can, author } = useApp();
   const metrics = watchableMetrics(can);
 
   const [f, setF] = useState(() => ({
@@ -28,7 +26,7 @@ export function WatchForm({ subject, onClose }) {
     windowDays: 21,
     markedOn: iso(today),
     target: '',
-    owner: OWNERS[0],
+    owner: author,
     meetingTitle: '',
     meetingDate: iso(today),
     attendees: '',
@@ -55,8 +53,7 @@ export function WatchForm({ subject, onClose }) {
       ...draft,
       title: f.title.trim(),
       target: f.target === '' ? null : Number(f.target),
-      owner: f.owner,
-      author: 'Vismay Shah',
+      owner: f.owner.trim() || author,
       meeting: {
         date: f.meetingDate,
         title: f.meetingTitle.trim() || 'Ad-hoc review',
@@ -93,7 +90,7 @@ export function WatchForm({ subject, onClose }) {
           <label className="label">What are you watching, and why</label>
           <input
             className="input" value={f.title} autoFocus
-            placeholder="e.g. King-size returns after the size-chart fix"
+            placeholder="e.g. Returns on the large size after the size-chart fix"
             onChange={set('title')}
           />
         </div>
@@ -113,7 +110,7 @@ export function WatchForm({ subject, onClose }) {
           </div>
           <div>
             <label className="label">
-              Target {metric.unit === 'pct' ? '(%)' : metric.unit === 'inr' ? '(₹)' : ''}
+              Target {metric.unit === 'pct' ? '(%)' : metric.unit === 'inr' ? `(${currencySymbol()})` : ''}
               <span className="tiny muted"> optional</span>
             </label>
             <input
@@ -130,7 +127,9 @@ export function WatchForm({ subject, onClose }) {
             <div className="watch-preview-value">{formatMetric(metric, preview.baseline)}</div>
           </div>
           <div className="tiny muted" style={{ textAlign: 'right' }}>
-            This becomes the baseline.<br />
+            {preview.baseline == null
+              ? <>This metric needs a source that is not connected.<br /></>
+              : <>This becomes the baseline.<br /></>}
             Review falls due {fmtDate(preview.reviewOn, 'long')}.
           </div>
         </div>
@@ -150,14 +149,12 @@ export function WatchForm({ subject, onClose }) {
         <div className="grid" style={{ gridTemplateColumns: '1fr 1fr', gap: 11 }}>
           <div>
             <label className="label">In the room <span className="tiny muted">comma separated</span></label>
-            <input className="input" value={f.attendees} placeholder="Kavya Iyer, Rhea Mehta"
+            <input className="input" value={f.attendees} placeholder="Who was there"
                    onChange={set('attendees')} />
           </div>
           <div>
             <label className="label">Owner</label>
-            <select className="input" value={f.owner} onChange={set('owner')}>
-              {OWNERS.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
+            <input className="input" value={f.owner} onChange={set('owner')} placeholder="Who is accountable" />
           </div>
         </div>
 
@@ -213,10 +210,4 @@ export function WatchButton({ subject, label = 'Watch', size = 'sm', iconOnly = 
       {open && <WatchForm subject={subject} onClose={() => setOpen(false)} />}
     </>
   );
-}
-
-/** Variant options for a product, for forms that offer a SKU-level watch. */
-export function variantOptions(productId) {
-  const p = PRODUCT_BY_ID[productId];
-  return p ? skusForProduct(p) : [];
 }
