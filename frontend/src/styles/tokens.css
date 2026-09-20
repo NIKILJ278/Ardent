@@ -1,0 +1,169 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   Ardent design tokens
+
+   Premium / minimal / executive. Near-monochrome neutrals, one accent, and a
+   status palette that is reserved for state and never reused as a series
+   colour. Chart series colours are the dataviz-validated set (both modes pass
+   the lightness, chroma, CVD-separation and normal-vision gates).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --plane:          #f7f7f6;
+  --surface:        #ffffff;
+  --surface-2:      #fafaf9;
+  --surface-3:      #f2f2f0;
+  --surface-hover:  #f5f5f3;
+
+  /* Ink */
+  --ink:            #0b0b0b;
+  --ink-2:          #52514e;
+  --ink-3:          #898781;
+  --ink-inv:        #ffffff;
+
+  /* Lines */
+  --border:         #e6e5e1;
+  --border-strong:  #d3d2cc;
+  --grid:           #ececea;
+
+  /* Accent — same hue family as the chart blue, stepped darker for UI */
+  --accent:         #1c5cab;
+  --accent-hover:   #184f95;
+  --accent-soft:    #e8f0fb;
+  --accent-ink:     #ffffff;
+
+  /* Status — fixed, never themed, always paired with an icon + label */
+  --good:           #0ca30c;
+  --warning:        #fab219;
+  --serious:        #ec835a;
+  --critical:       #d03b3b;
+  --good-soft:      #e8f6e8;
+  --warning-soft:   #fdf3dd;
+  --serious-soft:   #fceee7;
+  --critical-soft:  #fae9e9;
+  --good-ink:       #056605;
+  --warning-ink:    #8a5d00;
+  --serious-ink:    #a24a24;
+  --critical-ink:   #a52222;
+
+  /* Chart series — validated light steps */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-muted: #c3c2b7;
+
+  /* Chart chrome */
+  --chart-surface:  #ffffff;
+  --chart-grid:     #ececea;
+  --chart-axis:     #c3c2b7;
+  --chart-label:    #898781;
+
+  /* Elevation — restrained on purpose */
+  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.04);
+  --shadow-md: 0 2px 8px rgba(11, 11, 11, 0.06), 0 1px 2px rgba(11, 11, 11, 0.04);
+  --shadow-lg: 0 12px 32px rgba(11, 11, 11, 0.12), 0 2px 8px rgba(11, 11, 11, 0.06);
+
+  --radius-sm: 6px;
+  --radius:    9px;
+  --radius-lg: 14px;
+
+  --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --step: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  --sidebar-w: 244px;
+  --sidebar-w-collapsed: 64px;
+  --topbar-h: 60px;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --plane:          #0c0c0d;
+  --surface:        #141416;
+  --surface-2:      #1a1a1d;
+  --surface-3:      #202024;
+  --surface-hover:  #1f1f23;
+
+  --ink:            #f5f5f4;
+  --ink-2:          #a8a7a2;
+  --ink-3:          #7a7975;
+  --ink-inv:        #0b0b0b;
+
+  --border:         #26262a;
+  --border-strong:  #35353a;
+  --grid:           #232327;
+
+  --accent:         #3987e5;
+  --accent-hover:   #5598e7;
+  --accent-soft:    #16233a;
+  --accent-ink:     #ffffff;
+
+  --good:           #0ca30c;
+  --warning:        #fab219;
+  --serious:        #ec835a;
+  --critical:       #d03b3b;
+  --good-soft:      #10240f;
+  --warning-soft:   #2b2209;
+  --serious-soft:   #2b1a12;
+  --critical-soft:  #2b1212;
+  --good-ink:       #4cc44c;
+  --warning-ink:    #f6c453;
+  --serious-ink:    #f0a181;
+  --critical-ink:   #e46b6b;
+
+  /* Validated dark steps — same hues, re-stepped for the dark surface */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-muted: #4a4a48;
+
+  --chart-surface:  #141416;
+  --chart-grid:     #232327;
+  --chart-axis:     #383835;
+  --chart-label:    #898781;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Honour the OS setting when the user has not chosen explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --plane: #0c0c0d;      --surface: #141416;   --surface-2: #1a1a1d;
+    --surface-3: #202024;  --surface-hover: #1f1f23;
+    --ink: #f5f5f4;        --ink-2: #a8a7a2;     --ink-3: #7a7975;  --ink-inv: #0b0b0b;
+    --border: #26262a;     --border-strong: #35353a; --grid: #232327;
+    --accent: #3987e5;     --accent-hover: #5598e7;  --accent-soft: #16233a;
+    --good-soft: #10240f;  --warning-soft: #2b2209;
+    --serious-soft: #2b1a12; --critical-soft: #2b1212;
+    --good-ink: #4cc44c;   --warning-ink: #f6c453;
+    --serious-ink: #f0a181; --critical-ink: #e46b6b;
+    --series-1: #3987e5;   --series-2: #d95926;  --series-3: #199e70;
+    --series-4: #c98500;   --series-5: #d55181;  --series-muted: #4a4a48;
+    --chart-surface: #141416; --chart-grid: #232327;
+    --chart-axis: #383835;    --chart-label: #898781;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Sixth categorical slot — added for the AJIO channel. Validated with the
+   dataviz palette checker against both surfaces; every channel mark is
+   directly labelled, which satisfies the light-mode contrast relief rule. */
+:root, [data-theme='light'] { --series-6: #008300; }
+[data-theme='dark'] { --series-6: #008300; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) { --series-6: #008300; }
+}
