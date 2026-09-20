@@ -60,6 +60,7 @@ async function request(method, path, body) {
   return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
 }
 
+<<<<<<< HEAD
 async function upload(path, formData) {
   const headers = { Accept: 'application/json' };
   const token = getToken();
@@ -87,11 +88,16 @@ async function upload(path, formData) {
   return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
 }
 
+=======
+>>>>>>> f13319c4c2f22eea9ce4d602cd3e4ced2d095117
 export const api = {
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body ?? {}),
   del: (path) => request('DELETE', path),
+<<<<<<< HEAD
   upload: (path, formData) => upload(path, formData),
+=======
+>>>>>>> f13319c4c2f22eea9ce4d602cd3e4ced2d095117
 };
 
 export { BASE as API_BASE };
