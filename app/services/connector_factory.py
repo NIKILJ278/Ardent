@@ -10,6 +10,9 @@ platform is one entry here plus its connector — no new screen.
 """
 from app.services.amazon_service import AmazonConnector
 from app.services.cashfree_service import CashfreeConnector
+from app.services.d2c_connectors import (
+    BlueDartConnector, DelhiveryConnector, MagentoConnector, WooCommerceConnector,
+)
 from app.services.file_import_service import OrderReportConnector, PaymentReportConnector
 from app.services.flipkart_service import FlipkartConnector
 from app.services.google_service import GA4Connector, GoogleAdsConnector
@@ -30,7 +33,7 @@ ENVIRONMENT = field("environment", "Environment", required=False, default="produ
                     options=[{"value": "production", "label": "Live"}, {"value": "test", "label": "Test"}])
 
 CATALOG = [
-    # ── Storefront ───────────────────────────────────────────────────────────
+    # ── D2C Storefronts ──────────────────────────────────────────────────────
     {
         "id": "shopify", "name": "Shopify", "category": "store", "auth": "credentials",
         "connector": ShopifyConnector, "account_field": "shop",
@@ -51,6 +54,30 @@ CATALOG = [
         "notes": "A client ID and secret work only when the app and the store belong to the same "
                  "Shopify organization. For any other store use Connect store, which installs through Shopify.",
         "also_oauth": True,
+    },
+    {
+        "id": "woocommerce", "name": "WooCommerce", "category": "store", "auth": "credentials",
+        "connector": WooCommerceConnector, "account_field": "site_url",
+        "provides": ["orders", "products", "refunds", "customer data"],
+        "docs": "https://woocommerce.github.io/woocommerce-rest-api-docs/",
+        "fields": [
+            field("site_url", "Store URL", placeholder="https://yourstore.com",
+                  help="Your WooCommerce website URL with https://"),
+            field("consumer_key", "Consumer Key", secret=True, placeholder="ck_…",
+                  help="WooCommerce → Settings → Advanced → REST API → Add Key."),
+            field("consumer_secret", "Consumer Secret", secret=True, placeholder="cs_…"),
+        ],
+    },
+    {
+        "id": "magento", "name": "Magento / Adobe Commerce", "category": "store", "auth": "credentials",
+        "connector": MagentoConnector, "account_field": "site_url",
+        "provides": ["orders", "products", "refunds"],
+        "docs": "https://developer.adobe.com/commerce/webapi/rest/",
+        "fields": [
+            field("site_url", "Magento URL", placeholder="https://magento.yourstore.com"),
+            field("access_token", "Integration Access Token", secret=True,
+                  help="Magento Admin → System → Integrations → Add New Integration."),
+        ],
     },
 
     # ── Marketplaces ─────────────────────────────────────────────────────────
@@ -198,10 +225,31 @@ CATALOG = [
         "notes": "Parcels are matched to orders by order number, so a Shopify order #1001 shipped "
                  "through Shiprocket gets its courier cost.",
     },
+    {
+        "id": "delhivery", "name": "Delhivery", "category": "shipping", "auth": "credentials",
+        "connector": DelhiveryConnector, "account_field": "api_token",
+        "provides": ["shipments", "freight charges", "RTO tracking", "NDR"],
+        "docs": "https://ucp.delhivery.com/docs/",
+        "fields": [
+            field("api_token", "Client API Token", secret=True,
+                  help="Delhivery Unified Client Portal → Settings → API Tokens."),
+            field("client_name", "Client / Account Name", required=False),
+        ],
+    },
+    {
+        "id": "bluedart", "name": "Blue Dart / Shiproc", "category": "shipping", "auth": "credentials",
+        "connector": BlueDartConnector, "account_field": "login_id",
+        "provides": ["shipments", "tracking", "freight charges"],
+        "docs": "https://www.bluedart.com/developer-portal",
+        "fields": [
+            field("login_id", "Login ID / Customer Code", placeholder="BOM12345"),
+            field("license_key", "License Key", secret=True),
+        ],
+    },
 
     # ── Advertising ──────────────────────────────────────────────────────────
     {
-        "id": "meta_ads", "name": "Meta Ads", "category": "ads", "auth": "credentials",
+        "id": "meta_ads", "name": "Meta Ads (Facebook & Instagram)", "category": "ads", "auth": "credentials",
         "connector": MetaAdsConnector, "account_field": "ad_account_id",
         "provides": ["ad spend", "impressions", "clicks", "purchases", "attributed revenue"],
         "docs": "https://www.facebook.com/business/help/503306463479099",
@@ -246,11 +294,11 @@ CATALOG = [
 
 BY_ID = {entry["id"]: entry for entry in CATALOG}
 CATEGORIES = [
-    {"id": "store", "label": "Storefront"},
-    {"id": "marketplace", "label": "Marketplaces"},
-    {"id": "payments", "label": "Payments"},
-    {"id": "shipping", "label": "Shipping"},
-    {"id": "ads", "label": "Advertising & analytics"},
+    {"id": "store", "label": "D2C Storefronts & Channels (Shopify, WooCommerce, Magento…)"},
+    {"id": "shipping", "label": "D2C Shipping & Logistics (Shiprocket, Delhivery, Blue Dart…)"},
+    {"id": "ads", "label": "D2C Advertising & Marketing (Meta Ads, Google Ads, GA4…)"},
+    {"id": "payments", "label": "D2C Payment Gateways (Razorpay, PayU, Cashfree, Stripe…)"},
+    {"id": "marketplace", "label": "Marketplaces (Amazon, Flipkart, Myntra, Nykaa…)"},
 ]
 
 # Kept for callers that import the old name.
