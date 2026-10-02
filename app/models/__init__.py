@@ -9,6 +9,7 @@ from app.models.return_model import ReturnRecord
 from app.models.report import SavedReport
 from app.models.alert import Alert
 from app.models.finance import ConnectionSecret, PaymentTransaction, Settlement, Shipment
+from app.models.login_session import LoginSession
 
 __all__ = [
     "User",
@@ -27,4 +28,5 @@ __all__ = [
     "PaymentTransaction",
     "Settlement",
     "Shipment",
+    "LoginSession",
 ]

@@ -2,14 +2,31 @@ import os
 from datetime import timedelta
 
 
+def _db_url(raw: str) -> str:
+    """Rewrite legacy 'postgres://' scheme that Heroku, Railway, Neon and Supabase
+    still emit — SQLAlchemy 1.4+ only recognises 'postgresql://'."""
+    if raw and raw.startswith("postgres://"):
+        return "postgresql://" + raw[len("postgres://"):]
+    return raw
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=12)
     JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
 
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///brandstack.db")
+    SQLALCHEMY_DATABASE_URI = _db_url(os.environ.get("DATABASE_URL", "sqlite:///brandstack.db"))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Connection pool settings — ignored by SQLite, used by Postgres.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,       # detect stale connections on checkout
+        "pool_recycle": 280,         # recycle before most hosted-DB idle timeouts (300 s)
+        "pool_size": 5,
+        "max_overflow": 10,
+    }
+    # Emit a login-session row on every successful sign-in.
+    AUDIT_LOGINS = os.environ.get("AUDIT_LOGINS", "true").lower() != "false"
 
     ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
     ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
@@ -67,11 +84,26 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     DEBUG = False
+    # SQLite is fine locally; block it in production so a missing DATABASE_URL
+    # causes an obvious startup error rather than silently writing to a file.
+    @classmethod
+    def _check(cls):
+        uri = cls.SQLALCHEMY_DATABASE_URI or ""
+        if uri.startswith("sqlite"):
+            import warnings
+            warnings.warn(
+                "DATABASE_URL is not set (or is still SQLite). "
+                "Set it to a PostgreSQL connection string for production.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
 
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    AUDIT_LOGINS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {}  # no pool settings for in-memory SQLite
 
 
 config_by_name = {
