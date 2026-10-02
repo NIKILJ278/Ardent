@@ -50,13 +50,22 @@ export const COMPARISON_MODES = [
  */
 export const DATA_RANGE = { start: null, end: null, days: 0 };
 
+/** Data introduced starting April 1st of the current year. */
+function minAprilDate(year) {
+  const april = new Date(year, 3, 1); // Month 3 = April (0-indexed)
+  april.setHours(0, 0, 0, 0);
+  return april;
+}
+
 function refreshRange() {
   const end = new Date(TODAY);
   end.setHours(23, 59, 59, 999);
+  const aprilStart = minAprilDate(end.getFullYear());
   const first = live.meta.range?.first;
-  const start = first
-    ? new Date(`${first}T00:00:00`)
-    : new Date(end.getFullYear(), end.getMonth(), 1);
+  let start = first ? new Date(`${first}T00:00:00`) : aprilStart;
+  if (start < aprilStart) {
+    start = aprilStart;
+  }
   start.setHours(0, 0, 0, 0);
   DATA_RANGE.start = start;
   DATA_RANGE.end = end;
@@ -71,6 +80,12 @@ function capToToday(d) {
   const end = new Date(TODAY);
   end.setHours(23, 59, 59, 999);
   return d > end ? end : d;
+}
+
+/** Ensure date never goes earlier than April 1st. */
+function clampToApril(d) {
+  const aprilStart = minAprilDate(TODAY.getFullYear());
+  return d < aprilStart ? aprilStart : d;
 }
 
 export function resolvePeriod(presetId, custom) {
@@ -93,11 +108,11 @@ export function resolvePeriod(presetId, custom) {
       start = new Date(TODAY.getFullYear(), Math.floor(TODAY.getMonth() / 3) * 3, 1);
       break;
     case 'year':
-      start = new Date(TODAY.getFullYear(), 0, 1);
+      start = minAprilDate(TODAY.getFullYear()); // Data starts April 1st
       break;
     case 'custom':
       if (custom?.start && custom?.end) {
-        const cs = new Date(custom.start + 'T00:00:00');
+        const cs = clampToApril(new Date(custom.start + 'T00:00:00'));
         const ce = capToToday(new Date(custom.end + 'T23:59:59'));
         const [a, b] = cs <= ce ? [cs, ce] : [ce, cs];
         return { start: a, end: b, label: 'Custom Range', clamped: custom.end > iso(TODAY) };
@@ -107,6 +122,7 @@ export function resolvePeriod(presetId, custom) {
     default:
       start = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
   }
+  start = clampToApril(start);
   start.setHours(0, 0, 0, 0);
   return {
     start, end,

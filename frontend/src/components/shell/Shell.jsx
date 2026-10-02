@@ -304,14 +304,21 @@ function CalendarMonth({ year, month, rangeStart, rangeEnd, hovered, onDay, onHo
 
 function DateRangePicker({ value, onChange, minDate, maxDate, onApply, onCancel, hint }) {
   const today = new Date();
+  const minY = minDate ? parseInt(minDate.slice(0, 4), 10) : today.getFullYear();
+  const minM = minDate ? parseInt(minDate.slice(5, 7), 10) - 1 : 3; // month 3 = April
+
+  const initialMonth = today.getFullYear() === minY ? Math.max(today.getMonth(), minM) : today.getMonth();
   const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [viewMonth, setViewMonth] = useState(initialMonth);
   const [hovered, setHovered] = useState(null);
   // picking: 'start' | 'end'
   const [picking, setPicking] = useState('start');
   const [local, setLocal] = useState(value ?? { start: '', end: '' });
 
+  const canPrev = viewYear > minY || (viewYear === minY && viewMonth > minM);
+
   const prevMonth = () => {
+    if (!canPrev) return;
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
     else setViewMonth(m => m - 1);
   };
@@ -342,7 +349,7 @@ function DateRangePicker({ value, onChange, minDate, maxDate, onApply, onCancel,
     <div className="dp-root">
       {/* header */}
       <div className="dp-header">
-        <button className="dp-nav" onClick={prevMonth} aria-label="Previous month">
+        <button className="dp-nav" onClick={prevMonth} disabled={!canPrev} aria-label="Previous month">
           <ChevronLeft size={15} />
         </button>
         <span className="dp-month-label">{MONTHS[viewMonth]} {viewYear}</span>
