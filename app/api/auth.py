@@ -90,6 +90,57 @@ def login():
     return ok({"user": user.to_dict(), "access_token": access_token, "refresh_token": refresh_token})
 
 
+@auth_bp.post("/social")
+def social_login():
+    """Authenticate or register via Google, Microsoft, or other OAuth SSO providers."""
+    data = request.get_json(force=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    full_name = (data.get("full_name") or "").strip()
+    provider = (data.get("provider") or "social").strip().lower()
+    brand_name = (data.get("brand_name") or "").strip()
+
+    if not email:
+        return error("Email is required for social login", status=400)
+
+    user = User.query.filter_by(email=email).first()
+    created = False
+    if not user:
+        import secrets
+        # New account from SSO provider
+        user = User(
+            email=email,
+            full_name=full_name or email.split("@")[0].replace(".", " ").title(),
+        )
+        user.set_password(secrets.token_urlsafe(32))
+        db.session.add(user)
+        db.session.flush()
+        created = True
+
+        # Auto-create brand for new SSO user
+        from app.models import Brand, BrandMember
+        bname = brand_name or f"{user.full_name}'s Store"
+        brand = Brand(name=bname)
+        db.session.add(brand)
+        db.session.flush()
+        member = BrandMember(brand_id=brand.id, user_id=user.id, role="owner")
+        db.session.add(member)
+
+    if not user.is_active:
+        return error("This account has been disabled", status=403)
+
+    access_token = create_access_token(identity=user.id)
+    refresh_token = create_refresh_token(identity=user.id)
+    _record_login(user.id, provider, access_token)
+    db.session.commit()
+
+    return ok({
+        "user": user.to_dict(),
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "created": created,
+    }, status=201 if created else 200)
+
+
 @auth_bp.post("/refresh")
 @jwt_required(refresh=True)
 def refresh():

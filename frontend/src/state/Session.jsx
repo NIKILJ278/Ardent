@@ -92,6 +92,17 @@ export function SessionProvider({ children }) {
     setPhase('checking');
   }, []);
 
+  const socialSignIn = useCallback(async ({ provider, email, fullName, brandName }) => {
+    const data = await api.post('/api/auth/social', {
+      provider,
+      email,
+      full_name: fullName,
+      brand_name: brandName,
+    });
+    setToken(data.access_token);
+    setPhase('checking');
+  }, []);
+
   const createAccount = useCallback(async ({ fullName, email, password, brandName }) => {
     const data = await api.post('/api/auth/register', { full_name: fullName, email, password });
     setToken(data.access_token);
@@ -115,8 +126,8 @@ export function SessionProvider({ children }) {
 
   const value = useMemo(() => ({
     phase, user, brands, brandId,
-    signIn, createAccount, createBrand, signOut, selectBrand, loadFacts, retry,
-  }), [phase, user, brands, brandId, signIn, createAccount, createBrand, signOut, selectBrand, loadFacts, retry]);
+    signIn, socialSignIn, createAccount, createBrand, signOut, selectBrand, loadFacts, retry,
+  }), [phase, user, brands, brandId, signIn, socialSignIn, createAccount, createBrand, signOut, selectBrand, loadFacts, retry]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
