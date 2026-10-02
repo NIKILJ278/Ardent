@@ -10,7 +10,7 @@ import {
 import { useApp } from '../../state/AppState.jsx';
 import { useSession } from '../../state/Session.jsx';
 import { CHANNELS, CHANNEL_BY_ID, COMPANY_BY_ID, channelsFor } from '../../data/catalog.js';
-import { PERIOD_PRESETS, COMPARISON_MODES, DATA_RANGE } from '../../data/engine.js';
+import { PERIOD_PRESETS, COMPARISON_MODES, DATA_RANGE, comparisonWindow } from '../../data/engine.js';
 import { QUICK_EXPORTS, buildExport, canExport } from '../../data/exports.js';
 import { live } from '../../data/live.js';
 import { exportCsv, exportMeta } from '../../lib/csv.js';
@@ -421,6 +421,20 @@ function PeriodPicker() {
   const maxDate = DATA_RANGE.end ? iso(DATA_RANGE.end) : undefined;
   const first = live.meta.range?.first;
 
+  const compWindow = useMemo(() => comparisonWindow(period, comparison), [period, comparison]);
+  const compRangeText = compWindow?.start && compWindow?.end
+    ? `${fmtDate(compWindow.start)} – ${fmtDate(compWindow.end, 'long')}`
+    : null;
+
+  const getCompSub = (mId) => {
+    if (mId === 'forecast') return 'Straight-line run-rate forecast';
+    const win = comparisonWindow(period, mId);
+    if (win?.start && win?.end) {
+      return `${fmtDate(win.start)} – ${fmtDate(win.end, 'long')}`;
+    }
+    return null;
+  };
+
   return (
     <div className="hstack" style={{ gap: 6 }}>
       <Popover
@@ -469,11 +483,14 @@ function PeriodPicker() {
       </Popover>
 
       <Popover
-        width={220}
+        width={268}
         trigger={({ toggle }) => (
-          <button className="btn" onClick={toggle} title="Comparison basis">
+          <button className="btn" onClick={toggle} title={compRangeText ? `Comparing against ${compRangeText}` : 'Comparison basis'}>
             <span className="muted" style={{ fontSize: 12 }}>vs</span>
-            <span>{COMPARISON_MODES.find(m => m.id === comparison)?.label}</span>
+            <span className="period-btn">
+              <span>{COMPARISON_MODES.find(m => m.id === comparison)?.label}</span>
+              {compRangeText && <span className="tiny muted period-range">{compRangeText}</span>}
+            </span>
             <ChevronDown size={13} style={{ opacity: 0.6 }} />
           </button>
         )}
@@ -481,12 +498,18 @@ function PeriodPicker() {
         {({ close }) => (
           <>
             <div className="pop-label">Compare against</div>
-            {COMPARISON_MODES.map(m => (
-              <button key={m.id} className={`pop-item${comparison === m.id ? ' on' : ''}`} onClick={() => { setComparison(m.id); close(); }}>
-                <span style={{ flex: 1 }}>{m.label}</span>
-                {comparison === m.id && <Check size={14} />}
-              </button>
-            ))}
+            {COMPARISON_MODES.map(m => {
+              const sub = getCompSub(m.id);
+              return (
+                <button key={m.id} className={`pop-item${comparison === m.id ? ' on' : ''}`} onClick={() => { setComparison(m.id); close(); }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontWeight: 500 }}>{m.label}</span>
+                    {sub && <span className="tiny muted" style={{ display: 'block', marginTop: 1 }}>{sub}</span>}
+                  </span>
+                  {comparison === m.id && <Check size={14} />}
+                </button>
+              );
+            })}
           </>
         )}
       </Popover>

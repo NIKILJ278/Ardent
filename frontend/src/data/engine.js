@@ -131,10 +131,16 @@ export function resolvePeriod(presetId, custom) {
 }
 
 /** What the comparison series is actually showing — never a fixed string. */
-export function comparisonLabel(mode) {
-  return {
+export function comparisonLabel(mode, period = null) {
+  const base = {
     previous: 'Previous Period', year: 'Previous Year', forecast: 'Forecast',
   }[mode] ?? 'Previous Period';
+  if (!period || mode === 'forecast') return base;
+  const win = comparisonWindow(period, mode);
+  if (win?.start && win?.end) {
+    return `${base} (${fmtDate(win.start)} – ${fmtDate(win.end, 'long')})`;
+  }
+  return base;
 }
 
 /** True when the comparison is a historical window rather than a projection. */
