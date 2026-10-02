@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, WifiOff } from 'lucide-react';
+import { Loader2, WifiOff, Eye, EyeOff } from 'lucide-react';
 import { useSession } from '../../state/Session.jsx';
 import { API_BASE } from '../../lib/api.js';
 
@@ -40,15 +40,29 @@ function useAction(action) {
 export function AuthScreen() {
   const { signIn, createAccount } = useSession();
   const [mode, setMode] = useState('signin');
-  const [f, setF] = useState({ fullName: '', email: '', password: '', brandName: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(() => !!localStorage.getItem('ardent_saved_email'));
+  const [f, setF] = useState(() => ({
+    fullName: '',
+    email: localStorage.getItem('ardent_saved_email') || '',
+    password: '',
+    brandName: '',
+  }));
   const set = (k) => (e) => setF(s => ({ ...s, [k]: e.target.value }));
 
   const creating = mode === 'create';
-  const { busy, error, run } = useAction(() => (
-    creating
-      ? createAccount({ ...f, email: f.email.trim() })
-      : signIn(f.email.trim(), f.password)
-  ));
+  const { busy, error, run } = useAction(async () => {
+    if (remember) {
+      localStorage.setItem('ardent_saved_email', f.email.trim());
+    } else {
+      localStorage.removeItem('ardent_saved_email');
+    }
+    if (creating) {
+      await createAccount({ ...f, email: f.email.trim() });
+    } else {
+      await signIn(f.email.trim(), f.password);
+    }
+  });
 
   const tooShort = creating && f.password.length > 0 && f.password.length < 8;
   const ready = f.email.trim() && f.password
@@ -64,21 +78,38 @@ export function AuthScreen() {
       <form className="vstack" style={{ gap: 12 }} onSubmit={run}>
         {creating && (
           <div>
-            <label className="label">Your name</label>
-            <input className="input" value={f.fullName} onChange={set('fullName')} autoComplete="name" />
+            <label className="label" htmlFor="auth-name">Your name</label>
+            <input id="auth-name" name="fullName" className="input" value={f.fullName} onChange={set('fullName')} autoComplete="name" />
           </div>
         )}
         <div>
-          <label className="label">Email</label>
-          <input className="input" type="email" value={f.email} onChange={set('email')}
+          <label className="label" htmlFor="auth-email">Email</label>
+          <input id="auth-email" name="email" className="input" type="email" value={f.email} onChange={set('email')}
                  autoComplete="email" autoFocus />
         </div>
         <div>
-          <label className="label">
+          <label className="label" htmlFor="auth-password">
             Password {creating && <span className="tiny muted">at least 8 characters</span>}
           </label>
-          <input className="input" type="password" value={f.password} onChange={set('password')}
-                 autoComplete={creating ? 'new-password' : 'current-password'} />
+          <div className="password-input-wrap">
+            <input
+              id="auth-password"
+              name="password"
+              className="input"
+              type={showPassword ? 'text' : 'password'}
+              value={f.password}
+              onChange={set('password')}
+              autoComplete={creating ? 'new-password' : 'current-password'}
+            />
+            <button
+              type="button"
+              className="eye-btn"
+              title={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword(s => !s)}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
           {tooShort && (
             <div className="tiny" style={{ color: 'var(--critical-ink)', marginTop: 4 }}>
               Use at least 8 characters.
@@ -87,10 +118,22 @@ export function AuthScreen() {
         </div>
         {creating && (
           <div>
-            <label className="label">Brand name</label>
-            <input className="input" value={f.brandName} onChange={set('brandName')} placeholder="Your brand" />
+            <label className="label" htmlFor="auth-brand">Brand name</label>
+            <input id="auth-brand" name="brandName" className="input" value={f.brandName} onChange={set('brandName')} placeholder="Your brand" />
           </div>
         )}
+
+        <div className="hstack" style={{ justifyContent: 'space-between', alignItems: 'center', marginTop: -2 }}>
+          <label className="hstack" style={{ gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--ink-2)' }}>
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={e => setRemember(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Remember email
+          </label>
+        </div>
 
         {error && <div className="auth-error">{error}</div>}
 

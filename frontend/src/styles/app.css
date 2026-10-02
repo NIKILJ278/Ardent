@@ -295,6 +295,14 @@ button { font-family: inherit; }
 .search-box .input { padding-left: 30px; width: 200px; }
 select.input { cursor: pointer; padding-right: 26px; }
 textarea.input { height: auto; padding: 8px 10px; resize: vertical; min-height: 72px; }
+.password-input-wrap { position: relative; display: flex; align-items: center; width: 100%; }
+.password-input-wrap .input { padding-right: 36px; }
+.password-input-wrap .eye-btn {
+  position: absolute; right: 6px; background: none; border: none; padding: 4px;
+  cursor: pointer; color: var(--ink-3); display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 4px; transition: color var(--step), background-color var(--step);
+}
+.password-input-wrap .eye-btn:hover { color: var(--ink); background-color: var(--surface-2); }
 .label { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); margin-bottom: 5px; }
 
 .pager {

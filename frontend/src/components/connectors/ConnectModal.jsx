@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { RefreshCw, ShoppingBag, UploadCloud, ExternalLink, KeyRound } from 'lucide-react';
+import { RefreshCw, ShoppingBag, UploadCloud, ExternalLink, KeyRound, Eye, EyeOff } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { Modal } from '../ui/index.jsx';
 
@@ -9,6 +9,7 @@ import { Modal } from '../ui/index.jsx';
    platform-specific — adding a field on the server is enough to show it. */
 
 function CredentialField({ f, value, onChange }) {
+  const [showSecret, setShowSecret] = useState(false);
   const common = {
     id: `cf-${f.key}`,
     className: 'input',
@@ -26,8 +27,20 @@ function CredentialField({ f, value, onChange }) {
           {!f.required && <option value="">—</option>}
           {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
+      ) : f.secret ? (
+        <div className="password-input-wrap">
+          <input {...common} type={showSecret ? 'text' : 'password'} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+          <button
+            type="button"
+            className="eye-btn"
+            title={showSecret ? 'Hide secret' : 'Show secret'}
+            onClick={() => setShowSecret(s => !s)}
+          >
+            {showSecret ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
       ) : (
-        <input {...common} type={f.secret ? 'password' : 'text'} autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+        <input {...common} type="text" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
       )}
       {f.help && <div className="source-hint" style={{ marginTop: 5 }}>{f.help}</div>}
     </div>
@@ -113,6 +126,7 @@ export function ShopifyKeyForm({ brandId, connection, onConnected, onCancel }) {
   const hints = connection?.credential_hints || {};
   const [shop, setShop] = useState(hints.shop || '');
   const [token, setToken] = useState('');
+  const [showToken, setShowToken] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
@@ -146,11 +160,21 @@ export function ShopifyKeyForm({ brandId, connection, onConnected, onCancel }) {
       </div>
       <div>
         <label className="label" htmlFor="shopify-token">Admin API access token</label>
-        <input
-          id="shopify-token" className="input" type="password" value={token}
-          onChange={e => setToken(e.target.value)} placeholder={connection ? '•••• leave blank to keep' : 'shpat_…'}
-          autoCapitalize="off" autoCorrect="off" spellCheck={false}
-        />
+        <div className="password-input-wrap">
+          <input
+            id="shopify-token" className="input" type={showToken ? 'text' : 'password'} value={token}
+            onChange={e => setToken(e.target.value)} placeholder={connection ? '•••• leave blank to keep' : 'shpat_…'}
+            autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          />
+          <button
+            type="button"
+            className="eye-btn"
+            title={showToken ? 'Hide token' : 'Show token'}
+            onClick={() => setShowToken(s => !s)}
+          >
+            {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
+        </div>
         <div className="source-hint" style={{ marginTop: 5 }}>
           Shopify admin → Settings → Apps and sales channels → Develop apps → create an app →
           Configuration → give it read access to orders, products, inventory and customers →
