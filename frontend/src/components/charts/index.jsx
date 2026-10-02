@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ReferenceLine, ReferenceDot, Cell,
 } from 'recharts';
+import { Eye } from 'lucide-react';
 import { money, moneyScale } from '../../lib/format.js';
 import { LabelList } from 'recharts';
+import { WatchButton, WatchForm } from '../watch/WatchButton.jsx';
 
 /** Most events shown inside one tooltip before it is summarised. */
 const MAX_TIP_EVENTS = 4;
@@ -28,12 +31,33 @@ function makeAxisFmt(max) {
 const axisFmt = (v) => makeAxisFmt(v)(v);
 
 /** Shared tooltip — identity is carried by a swatch plus the series name. */
-function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel }) {
+function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel, defaultMetric = 'grossSales' }) {
+  const [watching, setWatching] = useState(false);
   if (!active || !payload?.length) return null;
   const marker = markerByLabel?.get(label);
+  const dateStr = labelFmt ? labelFmt(label) : label;
+
   return (
     <div className="tip">
-      <div className="tip-h">{labelFmt ? labelFmt(label) : label}</div>
+      <div className="tip-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <span>{dateStr}</span>
+        <button
+          type="button"
+          className="tip-watch-btn"
+          style={{
+            background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 4,
+            padding: '2px 6px', fontSize: 10, cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+            gap: 4, color: 'var(--ink-2)', fontWeight: 500, transition: 'all 0.15s ease',
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setWatching(true);
+          }}
+          title="Add business note or watch metric on this date"
+        >
+          <Eye size={11} /> + Watch
+        </button>
+      </div>
       {payload
         .filter(p => p.value != null)
         // Primary series first; the comparison line is rendered underneath it.
@@ -93,6 +117,16 @@ function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel
           )}
         </div>
       )}
+
+      {watching && (
+        <WatchForm
+          subject={{
+            title: `Watch for ${dateStr}`,
+            metric: defaultMetric,
+          }}
+          onClose={() => setWatching(false)}
+        />
+      )}
     </div>
   );
 }
@@ -105,6 +139,7 @@ function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel
 export function RevenueTrend({
   data, height = 280, compareLabel = 'Previous Period',
   showCompare = true, targetLine, markers = [], onMarkerClick,
+  subject,
 }) {
   const hasCompare = showCompare && data.some(d => d.compare != null);
   const markerByLabel = new Map(markers.map(m => [m.label, m]));
@@ -135,7 +170,7 @@ export function RevenueTrend({
             tick={{ fontSize: 11 }} width={50}
           />
           <RTooltip
-            content={<Tip markerByLabel={markerByLabel} />}
+            content={<Tip markerByLabel={markerByLabel} defaultMetric={subject?.metric ?? 'grossSales'} />}
             cursor={{ stroke: 'var(--border-strong)', strokeWidth: 1 }}
           />
 
@@ -178,20 +213,26 @@ export function RevenueTrend({
         </AreaChart>
       </ResponsiveContainer>
 
-      <div className="legend" style={{ marginTop: 8, paddingLeft: 46 }}>
-        <span className="legend-item"><span className="swatch" style={{ background: 'var(--series-1)' }} />Revenue</span>
-        {hasCompare && (
-          <span className="legend-item">
-            <span className="swatch" style={{ background: 'var(--series-muted)' }} />{compareLabel}
-          </span>
-        )}
-        {markers.length > 0 && (
-          <span className="legend-item">
-            <span className="dot info" />
-            Business events
-            <span className="muted" style={{ fontSize: 11 }}>— hover a date for detail</span>
-          </span>
-        )}
+      <div className="legend" style={{ marginTop: 8, paddingLeft: 46, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="hstack" style={{ gap: 14 }}>
+          <span className="legend-item"><span className="swatch" style={{ background: 'var(--series-1)' }} />Revenue</span>
+          {hasCompare && (
+            <span className="legend-item">
+              <span className="swatch" style={{ background: 'var(--series-muted)' }} />{compareLabel}
+            </span>
+          )}
+          {markers.length > 0 && (
+            <span className="legend-item">
+              <span className="dot info" />
+              Business events
+              <span className="muted" style={{ fontSize: 11 }}>— hover a date for detail</span>
+            </span>
+          )}
+        </div>
+        <WatchButton
+          subject={subject ?? { title: 'GMV & Revenue Trend', metric: 'grossSales' }}
+          label="Add to Watchlist"
+        />
       </div>
     </div>
   );
