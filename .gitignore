@@ -5,3 +5,4 @@ venv/
 instance/
 *.db
 .DS_Store
+.pytest_cache/

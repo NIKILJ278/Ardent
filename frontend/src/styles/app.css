@@ -1204,3 +1204,60 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; min-height: 
   .onboard { flex-direction: column; }
   .not-connected { flex-wrap: wrap; }
 }
+
+/* Definitions: an (i) beside a label, and the note it opens. */
+.term { display: inline-flex; align-items: center; gap: 4px; }
+.term-i { display: inline-flex; color: var(--ink-3); cursor: help; border-radius: 50%; opacity: 0.7; }
+.term-i:hover, .term-i:focus-visible { opacity: 1; color: var(--accent); outline: none; }
+.term-tip {
+  position: fixed; z-index: 1000; transform: translateX(-50%);
+  width: 280px; max-width: calc(100vw - 24px); padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border-strong);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: 12px; font-weight: 400; line-height: 1.45; text-transform: none; letter-spacing: 0;
+  pointer-events: none; text-align: left;
+}
+.term-tip strong { font-size: 12.5px; font-weight: 600; }
+.term-tip code { font-size: 11px; color: var(--ink-2); background: var(--surface-3); padding: 3px 6px; border-radius: 4px; white-space: normal; }
+
+/* ── Date range picker: one calendar, a rail of options, typed dates ─────── */
+
+.drp { display: flex; }
+.drp-rail {
+  width: 128px; flex: none; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  border-right: 1px solid var(--border);
+}
+.drp-rail-item {
+  border: none; background: none; cursor: pointer; text-align: left;
+  padding: 7px 9px; border-radius: var(--radius-sm); font-size: 12.5px; color: var(--ink-2);
+}
+.drp-rail-item:hover { background: var(--surface-hover); }
+.drp-rail-item.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.drp-rail-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.drp-main { flex: 1; min-width: 0; padding: 10px 12px 12px; }
+.drp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.drp-select {
+  border: none; background: transparent; color: var(--ink); font-size: 13px; font-weight: 600;
+  padding: 3px 2px; cursor: pointer; border-radius: var(--radius-sm);
+}
+.drp-select:hover { background: var(--surface-hover); }
+.drp-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 2px; }
+.drp-dow { text-align: center; font-size: 11px; color: var(--ink-3); padding: 4px 0 6px; }
+.drp-day {
+  height: 32px; border: 1px solid transparent; background: none; cursor: pointer;
+  font-size: 12.5px; color: var(--ink); border-radius: 0; font-variant-numeric: tabular-nums;
+}
+.drp-day.outside { color: var(--ink-3); opacity: 0.55; }
+.drp-day.off { color: var(--ink-3); opacity: 0.3; cursor: not-allowed; }
+.drp-day:not(.off):not(.in):hover, .drp-day.hover { background: var(--surface-hover); border-radius: var(--radius-sm); }
+.drp-day.in { background: var(--accent-soft); color: var(--accent); }
+.drp-day.edge { background: var(--accent); color: #fff; font-weight: 600; border-radius: var(--radius-sm); opacity: 1; }
+.drp-day.today:not(.edge) { border-color: var(--accent); border-radius: var(--radius-sm); }
+.drp-foot {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.drp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.drp-and { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.drp-input { width: 104px; padding: 5px 8px; font-size: 12.5px; }

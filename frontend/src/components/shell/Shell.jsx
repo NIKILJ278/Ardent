@@ -15,6 +15,7 @@ import { live } from '../../data/live.js';
 import { exportCsv, exportMeta } from '../../lib/csv.js';
 import { channelColor } from '../../lib/channels.js';
 import { Popover } from '../ui/index.jsx';
+import { DatePanel } from './DateRangePicker.jsx';
 import { ROLES, PERM } from '../../state/permissions.js';
 import { fmtDate, iso, periodRange, num, relativeTime } from '../../lib/format.js';
 
@@ -228,7 +229,6 @@ function ChannelSelector() {
 
 function PeriodPicker() {
   const { periodId, setPeriodId, period, comparison, setComparison, customRange, setCustomRange } = useApp();
-  const [draft, setDraft] = useState(customRange ?? { start: '', end: '' });
   const periodLabel = periodId === 'custom' && customRange
     ? `${fmtDate(period.start)} – ${fmtDate(period.end, 'long')}`
     : PERIOD_PRESETS.find(p => p.id === periodId)?.label ?? 'This Month';
@@ -237,13 +237,11 @@ function PeriodPicker() {
 
   // Bounded to what the synced orders cover, read at render so it follows syncs.
   const minDate = DATA_RANGE.start ? iso(DATA_RANGE.start) : undefined;
-  const maxDate = DATA_RANGE.end ? iso(DATA_RANGE.end) : undefined;
-  const first = live.meta.range?.first;
 
   return (
     <div className="hstack" style={{ gap: 6 }}>
       <Popover
-        width={250}
+        width={452}
         trigger={({ toggle }) => (
           <button className="btn" onClick={toggle}>
             <Calendar size={14} />
@@ -256,43 +254,13 @@ function PeriodPicker() {
         )}
       >
         {({ close }) => (
-          <>
-            <div className="pop-label">Period</div>
-            {PERIOD_PRESETS.filter(p => p.id !== 'custom').map(p => (
-              <button key={p.id} className={`pop-item${periodId === p.id ? ' on' : ''}`} onClick={() => { setPeriodId(p.id); close(); }}>
-                <span style={{ flex: 1 }}>{p.label}</span>
-                {periodId === p.id && <Check size={14} />}
-              </button>
-            ))}
-            <div className="pop-sep" />
-            <div style={{ padding: '4px 9px 8px' }}>
-              <label className="label">Custom range</label>
-              <div className="hstack" style={{ gap: 6 }}>
-                <input
-                  type="date" className="input" value={draft.start}
-                  min={minDate} max={draft.end || maxDate}
-                  onChange={e => setDraft(d => ({ ...d, start: e.target.value }))}
-                />
-                <input
-                  type="date" className="input" value={draft.end}
-                  min={draft.start || minDate} max={maxDate}
-                  onChange={e => setDraft(d => ({ ...d, end: e.target.value }))}
-                />
-              </div>
-              <button
-                className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 8 }}
-                disabled={!draft.start || !draft.end}
-                onClick={() => { setCustomRange(draft); setPeriodId('custom'); close(); }}
-              >
-                Apply range
-              </button>
-              <div className="tiny muted" style={{ marginTop: 7, lineHeight: 1.45 }}>
-                {first
-                  ? `Orders synced from ${fmtDate(`${first}T00:00:00`, 'long')} to today.`
-                  : 'No orders synced yet.'}
-              </div>
-            </div>
-          </>
+          <DatePanel
+            presets={PERIOD_PRESETS.filter(p => p.id !== 'custom')}
+            periodId={periodId} period={period} minDate={minDate}
+            onPreset={(id) => { setPeriodId(id); close(); }}
+            onRange={(start, end) => { setCustomRange({ start, end }); setPeriodId('custom'); close(); }}
+            onCancel={close}
+          />
         )}
       </Popover>
 

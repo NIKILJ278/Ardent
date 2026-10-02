@@ -1,6 +1,6 @@
 import { ArrowRight, Info, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Card, Pill, Delta, Segmented } from '../ui/index.jsx';
+import { Card, Pill, Delta, Segmented, Term } from '../ui/index.jsx';
 import { money, num, pct } from '../../lib/format.js';
 
 /* ── Revenue: GMV to final realized sales ──────────────────────────────────
@@ -28,19 +28,19 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
     >
       <div className="rev-anchors">
         <div className="rev-anchor lead">
-          <span className="rev-anchor-label">GMV</span>
+          <span className="rev-anchor-label"><Term>GMV</Term></span>
           <span className="rev-anchor-value">{money(ladder.gmv)}</span>
           {delta != null && <Delta value={delta} />}
         </div>
         <span className="rev-arrow">→</span>
         <div className="rev-anchor">
-          <span className="rev-anchor-label">Net Sales</span>
+          <span className="rev-anchor-label"><Term>Net Sales</Term></span>
           <span className="rev-anchor-value mid">{money(ladder.netSales)}</span>
           <span className="tiny muted">{pct(ladder.netSalesPct)} of GMV</span>
         </div>
         <span className="rev-arrow">→</span>
         <div className="rev-anchor">
-          <span className="rev-anchor-label">Final Realized Sales</span>
+          <span className="rev-anchor-label"><Term>Final Realized Sales</Term></span>
           {ladder.realizedKnown ? (
             <>
               <span className="rev-anchor-value final">{money(ladder.realized)}</span>
@@ -63,7 +63,7 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
               <div className="ladder-row missing" key={r.id}>
                 <span className="ladder-label">
                   {r.kind === 'missing' && <span className="ladder-minus">−</span>}
-                  {r.label}
+                  <Term>{r.label}</Term>
                 </span>
                 <span className="ladder-bar" />
                 <span className="ladder-value"><span className="ladder-missing-tag">not connected</span></span>
@@ -80,7 +80,7 @@ export function RevenueLadder({ ladder, platform, platforms, onPlatform, delta }
             <div className={`ladder-row ${r.kind === 'head' ? 'start' : r.kind}`} key={r.id}>
               <span className="ladder-label">
                 {isCost && <span className="ladder-minus">−</span>}
-                {r.label}
+                <Term>{r.label}</Term>
               </span>
               <span className="ladder-bar">
                 <span className={`ladder-fill ${tone}`}

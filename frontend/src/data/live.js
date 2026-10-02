@@ -78,6 +78,10 @@ export function normaliseRow(r, brandId) {
     variant: r.variant,
     units: Number(r.units) || 0,
     orders: Number(r.orders) || 0,
+    // Which orders this row holds. Lets the engine count distinct orders at any
+    // scope instead of adding up per-row counts, which counts an order once for
+    // every product on it.
+    orderIds: Array.isArray(r.orderIds) ? r.orderIds : null,
     gross,
     grossSales,
     cancelValue,

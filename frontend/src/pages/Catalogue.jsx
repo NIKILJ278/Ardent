@@ -6,6 +6,7 @@ import { groupBy } from '../data/engine.js';
 import { productsFor, productForVariant, variantById } from '../data/catalog.js';
 import { money, num, pct } from '../lib/format.js';
 import { Card, DataTable, Empty, Pill } from '../components/ui/index.jsx';
+import { SkuSheet } from '../components/gst/SkuSheet.jsx';
 import { WatchButton } from '../components/watch/WatchButton.jsx';
 
 /**
@@ -55,6 +56,8 @@ export default function Catalogue() {
           Products and variants as your store holds them — {num(products.length)} product(s) synced.
         </p>
       </div>
+
+      <SkuSheet brandId={companyId} />
 
       {rows.length === 0 ? (
         <Card>

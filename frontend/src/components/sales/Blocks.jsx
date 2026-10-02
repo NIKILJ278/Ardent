@@ -1,6 +1,6 @@
 import { salesWaterfall, series } from '../../data/engine.js';
 import { money, num, pct, fmtDate } from '../../lib/format.js';
-import { Pill, Delta } from '../ui/index.jsx';
+import { Pill, Delta, Term } from '../ui/index.jsx';
 import { NotConnected } from '../ui/NotConnected.jsx';
 
 /* ── Waterfall — one definition, filtered by permission ───────────────────
@@ -26,7 +26,7 @@ export function Waterfall({ model, can }) {
           <div className={`ladder-row ${r.kind}`} key={r.id}>
             <span className="ladder-label">
               {isCost && <span className="ladder-minus">−</span>}
-              {r.label}
+              <Term>{r.label}</Term>
             </span>
             <span className="ladder-bar">
               <span className={`ladder-fill ${tone}`} style={{ width: `${Math.max(1, (Math.abs(r.value) / peak) * 100)}%` }} />
@@ -61,7 +61,7 @@ export function Waterfall({ model, can }) {
 export function Metric({ label, value, sub, delta, deltaUnit = '%', invert, flag }) {
   return (
     <div className="kpi" style={{ cursor: 'default' }}>
-      <span className="kpi-label">{label}</span>
+      <span className="kpi-label"><Term>{label}</Term></span>
       <span className="kpi-value tnum">{value}</span>
       <span className="kpi-sub">
         {delta != null && !Number.isNaN(delta) && <Delta value={delta} suffix={deltaUnit} invert={invert} />}

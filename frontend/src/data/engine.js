@@ -149,7 +149,19 @@ const ZERO = () => ({
 });
 
 function accumulate(target, row) {
-  target.units += row.units; target.orders += row.orders;
+  target.units += row.units;
+  // Orders are counted distinct, not summed. A row is one product on one day,
+  // and an order with three products sits in three rows — so adding row counts
+  // reports 7 orders for a day that had 5. Where a row names its orders, they
+  // are unioned; a row that does not (older payloads, fixtures) still adds.
+  if (row.orderIds) {
+    const seen = target._orderSet || (target._orderSet = new Set());
+    for (const id of row.orderIds) seen.add(id);
+    target.orders = seen.size + (target._orderExtra || 0);
+  } else {
+    target._orderExtra = (target._orderExtra || 0) + row.orders;
+    target.orders = (target._orderSet ? target._orderSet.size : 0) + target._orderExtra;
+  }
   target.gross += row.gross; target.grossSales += row.grossSales;
   target.cancelValue += row.cancelValue;
   target.discount += row.discount;

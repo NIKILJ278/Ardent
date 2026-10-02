@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { salesModel, series } from '../../data/engine.js';
 import { money, num, fmtDate, changePct } from '../../lib/format.js';
-import { Card, Segmented, Delta } from '../ui/index.jsx';
+import { Card, Segmented, Delta, Term } from '../ui/index.jsx';
 import { NotConnected } from '../ui/NotConnected.jsx';
 import { MeasureBars } from '../charts/index.jsx';
 
@@ -44,7 +44,7 @@ export function SalesToggleSection({ scope, prevScope }) {
     >
       <div className="hstack" style={{ gap: 26, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
-          <div className="kpi-label">{mode === 'gmv' ? 'Gross Merchandise Value' : 'Units Sold'}</div>
+          <div className="kpi-label"><Term>{mode === 'gmv' ? 'Gross Merchandise Value' : 'Units Sold'}</Term></div>
           <div className="tnum" style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.02em', lineHeight: 1.15 }}>
             {mode === 'gmv' ? money(total) : num(total)}
           </div>

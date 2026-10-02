@@ -10,15 +10,19 @@ platform is one entry here plus its connector — no new screen.
 """
 from app.services.amazon_service import AmazonConnector
 from app.services.cashfree_service import CashfreeConnector
+from app.services.ebay_service import EbayConnector
 from app.services.file_import_service import OrderReportConnector, PaymentReportConnector
 from app.services.flipkart_service import FlipkartConnector
 from app.services.google_service import GA4Connector, GoogleAdsConnector
+from app.services.mercadolibre_service import MercadoLibreConnector
 from app.services.meta_ads_service import MetaAdsConnector
 from app.services.payu_service import PayUConnector
 from app.services.razorpay_service import RazorpayConnector
 from app.services.shiprocket_service import ShiprocketConnector
 from app.services.shopify_service import ShopifyConnector
 from app.services.stripe_service import StripeConnector
+from app.services.tiktok_shop_service import TikTokShopConnector
+from app.services.walmart_service import WalmartConnector
 
 
 def field(key, label, *, secret=False, required=True, placeholder="", help="", options=None, default=None):
@@ -88,6 +92,67 @@ CATALOG = [
         ],
         "notes": "Flipkart's order API does not include commission or fees, so Flipkart fees stay "
                  "unreported until a settlement source is added.",
+    },
+    {
+        "id": "ebay", "name": "eBay", "category": "marketplace", "auth": "credentials",
+        "connector": EbayConnector, "account_field": "client_id",
+        "provides": ["orders", "marketplace fees", "cancellations", "refunds"],
+        "docs": "https://developer.ebay.com/api-docs/static/oauth-tokens.html",
+        "fields": [
+            field("client_id", "Client ID (App ID)",
+                  help="developer.ebay.com → My Account → Application Keys."),
+            field("client_secret", "Client secret (Cert ID)", secret=True),
+            field("refresh_token", "Refresh token", secret=True,
+                  help="Authorise once through eBay's own consent screen or the developer portal's "
+                       "\"Get a User Token\" tool, with the sell.fulfillment scope — eBay will not "
+                       "issue an order-level token from the client ID and secret alone."),
+        ],
+        "notes": "eBay's own order search only ever returns the trailing three months, whatever date "
+                 "range is asked for — there is no way to backfill further back than that.",
+    },
+    {
+        "id": "walmart", "name": "Walmart Marketplace", "category": "marketplace", "auth": "credentials",
+        "connector": WalmartConnector, "account_field": "client_id",
+        "provides": ["orders", "cancellations", "refunds"],
+        "docs": "https://developer.walmart.com/us-marketplace/docs/get-an-access-token",
+        "fields": [
+            field("client_id", "Client ID", help="Seller Center → Settings → API/Solution Provider."),
+            field("client_secret", "Client secret", secret=True),
+        ],
+        "notes": "Walmart's order API does not report its commission; that only appears in Walmart's "
+                 "settlement reports, so Walmart fees stay unreported until that source is added.",
+    },
+    {
+        "id": "tiktok_shop", "name": "TikTok Shop", "category": "marketplace", "auth": "credentials",
+        "connector": TikTokShopConnector, "account_field": "app_key",
+        "provides": ["orders", "cancellations"],
+        "docs": "https://partner.tiktokshop.com/docv2/page/authorization-overview-202407",
+        "fields": [
+            field("app_key", "App key", help="TikTok Shop Partner Center → your app → App Key."),
+            field("app_secret", "App secret", secret=True),
+            field("refresh_token", "Refresh token", secret=True,
+                  help="Authorise the shop once through TikTok's OAuth consent screen to get this."),
+            field("shop_cipher", "Shop cipher",
+                  help="Returned alongside the refresh token when the shop authorises your app; "
+                       "identifies which shop to read."),
+        ],
+        "notes": "TikTok Shop's marketplace commission is a settlement-statement figure, not on the "
+                 "order itself, so it stays unreported until a settlement source is added.",
+    },
+    {
+        "id": "mercadolibre", "name": "Mercado Libre", "category": "marketplace", "auth": "credentials",
+        "connector": MercadoLibreConnector, "account_field": "client_id",
+        "provides": ["orders", "marketplace fees", "cancellations"],
+        "docs": "https://developers.mercadolibre.com/authentication-and-authorization/",
+        "fields": [
+            field("client_id", "App ID", help="Mercado Libre Developers → Your applications."),
+            field("client_secret", "Secret key", secret=True),
+            field("refresh_token", "Refresh token", secret=True,
+                  help="Authorise once through Mercado Libre's consent screen to get this."),
+        ],
+        "notes": "Mercado Libre issues a new refresh token on every use and immediately retires the "
+                 "old one; Ardent saves the new one automatically on every sync, so nothing further "
+                 "is needed here after the first connection.",
     },
     {
         "id": "myntra", "name": "Myntra", "category": "marketplace", "auth": "file", "kind": "orders",

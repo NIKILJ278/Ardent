@@ -404,6 +404,35 @@ class Facts(Base):
         self.assertEqual(day["orderCount"], 3)
         self.assertEqual(self.facts(start="15-09-2026").status_code, 400)
 
+    def test_rows_name_their_orders_so_an_order_is_counted_once_not_per_product(self):
+        conn = self.connection()
+        connector = ShopifyConnector(conn)
+        # One order with THREE products, and one order with one — two orders,
+        # four order lines, on the same day.
+        connector._upsert_order(order_node(
+            4001, [line(1, 1, 100, product="1", variant="11", sku="A"),
+                   line(2, 1, 200, product="2", variant="21", sku="B"),
+                   line(3, 1, 300, product="3", variant="31", sku="C")],
+            created="2026-09-01T05:00:00Z"))
+        connector._upsert_order(order_node(
+            4002, [line(4, 1, 400, product="1", variant="11", sku="A")],
+            created="2026-09-01T06:00:00Z"))
+        db.session.commit()
+
+        data = body(self.facts(start="2026-09-01", end="2026-09-01"))
+        rows = data["rows"]
+        self.assertEqual(data["orderCount"], 2)
+        # The pitfall: per-row counts add up to more than the real number.
+        self.assertEqual(sum(r["orders"] for r in rows), 4)
+        # The fix: every row names its orders, and the union is the truth.
+        self.assertTrue(all(isinstance(r["orderIds"], list) and r["orderIds"] for r in rows))
+        self.assertEqual(len({i for r in rows for i in r["orderIds"]}), 2)
+        # Product 1 was on both orders; products 2 and 3 on only one.
+        by_product = {r["product"].rsplit("/", 1)[-1]: set(r["orderIds"]) for r in rows}
+        self.assertEqual(len(by_product["1"]), 2)
+        self.assertEqual(len(by_product["2"]), 1)
+        self.assertEqual(by_product["2"], by_product["3"])
+
     def test_another_brand_cannot_read_these_facts(self):
         self.seed()
         _, _, intruder = self.make_owner("intruder@example.test", "Other Brand")

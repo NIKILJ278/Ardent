@@ -20,6 +20,7 @@ import {
 } from '../components/sales/Blocks.jsx';
 import { MatrixTable } from '../components/sales/MatrixTable.jsx';
 import { RevenueSplit } from '../components/sales/RevenueSplit.jsx';
+import { DailyOrders } from '../components/sales/DailyOrders.jsx';
 import { WatchButton } from '../components/watch/WatchButton.jsx';
 import { SalesToggleSection, MarketplaceEconomics } from '../components/sales/ChannelEconomics.jsx';
 import { channelColor } from '../lib/channels.js';
@@ -35,6 +36,7 @@ const LEVELS = [
 
 const SECTIONS = [
   { id: 'performance', label: 'Sales Performance', perm: PERM.SALES_PERFORMANCE },
+  { id: 'daily',       label: 'Daily Orders',      perm: PERM.SALES_PERFORMANCE },
   { id: 'channels',    label: 'Channel Performance', perm: PERM.CHANNEL_PERFORMANCE },
   { id: 'economics',   label: 'Channel Economics', perm: PERM.CHANNEL_ECONOMICS },
   { id: 'unit',        label: 'Unit Economics',    perm: PERM.UNIT_ECONOMICS },
@@ -273,6 +275,7 @@ export default function Sales() {
         <PerformanceTab m={m} pm={pm} can={can} crumbs={crumbs} target={target}
                         achievement={achievement} goalName={netGoal?.name} />
       )}
+      {tab === 'daily' && <DailyOrders scope={drillScope} />}
       {tab === 'channels' && <ChannelsTab rows={channelRows} onDrill={drillTo} />}
       {tab === 'economics' && (
         <div className="vstack" style={{ gap: 18 }}>

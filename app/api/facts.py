@@ -154,6 +154,7 @@ def get_facts(brand_id, role):
 
     groups = {}
     order_ids = defaultdict(set)
+    order_index = {}
     products = {}
     first_day, last_day = None, None
     fee_lines = [0, 0]  # known, unknown
@@ -263,6 +264,12 @@ def get_facts(brand_id, role):
     known_units = unknown_units = 0
     for key, row in groups.items():
         row["orders"] = len(order_ids[key])
+        # WHICH orders, not just how many. An order with three products sits in
+        # three rows, so adding row counts up counts it three times — a day with
+        # 5 orders and 7 order lines reads as 7. With the identities the
+        # dashboard can count distinct orders at any level it groups by.
+        # Dense integers, not the 36-character ids, to keep the payload small.
+        row["orderIds"] = sorted(order_index.setdefault(oid, len(order_index)) for oid in order_ids[key])
         row["netSales"] = row["grossSales"] - row["cancelValue"] - row["discount"] - row["returnsValue"]
         # Only a fully costed row carries COGS; a partial one would understate it.
         row["cogs"] = row["cogs"] if row["costUnknownUnits"] == 0 else None

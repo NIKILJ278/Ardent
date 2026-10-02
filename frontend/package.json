@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "smoke": "vite build --ssr smoke.jsx --outDir dist-ssr --logLevel error && node dist-ssr/smoke.js",
-    "domtest": "vite build --ssr domtest.jsx --outDir dist-dom --logLevel error && node dist-dom/domtest.js"
+    "domtest": "vite build --ssr domtest.jsx --outDir dist-dom --logLevel error && node dist-dom/domtest.js",
+    "ordertest": "vite build --ssr ordertest.jsx --outDir dist-order --logLevel error && node dist-order/ordertest.js"
   },
   "dependencies": {
     "axios": "^1.20.0",
@@ -18,7 +19,7 @@
     "react": "^19.2.8",
     "react-bootstrap": "2.10",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^6.30.6",
+    "react-router-dom": "^7.18.4",
     "recharts": "^3.10.1"
   },
   "devDependencies": {

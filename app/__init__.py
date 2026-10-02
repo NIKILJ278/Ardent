@@ -23,12 +23,43 @@ def create_app(env=None):
     register_blueprints(app)
     register_error_handlers(app)
     upgrade_schema(app)
+    register_frontend(app)
 
     @app.get("/health")
     def health():
         return {"status": "ok", "service": "brandstack-backend"}
 
     return app
+
+
+def register_frontend(app):
+    """Serve the built dashboard from this same server, when asked to.
+
+    Opt-in through FRONTEND_DIST (the path to `frontend/dist`), so ordinary
+    development — Vite on one port, this API on another — is unchanged. Serving
+    both from one origin is what makes a single public URL possible: one tunnel
+    or one host, no cross-origin setup between the page and its API.
+
+    Anything under /api/ that no route claimed stays a JSON 404 rather than
+    falling through to the page, so a mistyped API path is not mistaken for a
+    working one.
+    """
+    dist = os.environ.get("FRONTEND_DIST")
+    if not dist or not os.path.isfile(os.path.join(dist, "index.html")):
+        return
+    from flask import send_from_directory
+    from app.utils.responses import error
+
+    @app.get("/", defaults={"path": ""})
+    @app.get("/<path:path>")
+    def dashboard(path):
+        if path.startswith("api/") or path == "api":
+            return error("Resource not found", status=404)
+        # send_from_directory refuses any path that escapes `dist`.
+        if path and os.path.isfile(os.path.join(dist, path)):
+            return send_from_directory(dist, path)
+        # Every other path is a client-side route (/sales, /sources …).
+        return send_from_directory(dist, "index.html")
 
 
 def upgrade_schema(app):
@@ -62,11 +93,13 @@ def register_blueprints(app):
     from app.api.ai import ai_bp
     from app.api.shopify_oauth import shopify_oauth_bp
     from app.api.facts import facts_bp
+    from app.api.gst import gst_bp
 
     # Full paths live on the routes themselves: the callback URL is fixed by the
     # Shopify app's configuration and must not move under a brand prefix.
     app.register_blueprint(shopify_oauth_bp)
     app.register_blueprint(facts_bp, url_prefix="/api/brands/<brand_id>/facts")
+    app.register_blueprint(gst_bp, url_prefix="/api/brands/<brand_id>/gst")
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(brands_bp, url_prefix="/api/brands")
     app.register_blueprint(connectors_bp, url_prefix="/api/brands/<brand_id>/connectors")

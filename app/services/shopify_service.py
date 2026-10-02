@@ -119,6 +119,7 @@ query Orders($first: Int!, $after: String, $query: String) {
       totalDiscountsSet { shopMoney { amount } }
       totalShippingPriceSet { shopMoney { amount } }
       totalTaxSet { shopMoney { amount } }
+      shippingAddress { provinceCode province }
       totalRefundedSet { shopMoney { amount } }
       lineItems(first: 50) {
         pageInfo { hasNextPage endCursor }
@@ -512,6 +513,11 @@ class ShopifyConnector(BaseConnector):
         order.discount_amount = discounts
         order.shipping_amount = _money(node.get("totalShippingPriceSet"))
         order.tax_amount = _money(node.get("totalTaxSet"))
+        # Where the goods went decides CGST+SGST versus IGST. Absent for orders
+        # with no shipping address (digital goods, some draft orders): left as is.
+        province = ((node.get("shippingAddress") or {}).get("province") or "").strip()
+        if province:
+            order.shipping_state = province
         order.refunded_amount = _money(node.get("totalRefundedSet"))
         # Shopify's Orders API carries no gateway or courier cost. Those stay
         # unknown here rather than being guessed.

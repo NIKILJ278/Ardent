@@ -60,10 +60,39 @@ async function request(method, path, body) {
   return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
 }
 
+async function upload(path, formData) {
+  const headers = { Accept: 'application/json' };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  // No Content-Type here — the browser sets the multipart boundary itself.
+
+  let resp;
+  try {
+    resp = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: formData });
+  } catch {
+    throw new ApiError(`Cannot reach the Ardent server at ${BASE}. Start the backend and try again.`, 0);
+  }
+
+  let payload = null;
+  try { payload = await resp.json(); } catch { /* empty or non-JSON body */ }
+
+  if (!resp.ok) {
+    if (resp.status === 401 && token && onUnauthorized) onUnauthorized();
+    const message = payload?.error || payload?.message || payload?.msg || `Request failed (${resp.status})`;
+    const err = new ApiError(message, resp.status);
+    err.details = payload?.details ?? payload?.data?.details ?? null;
+    err.code = payload?.code ?? payload?.data?.code ?? null;
+    throw err;
+  }
+  return payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
+}
+
 export const api = {
   get: (path) => request('GET', path),
   post: (path, body) => request('POST', path, body ?? {}),
+  put: (path, body) => request('PUT', path, body ?? {}),
   del: (path) => request('DELETE', path),
+  upload: (path, formData) => upload(path, formData),
 };
 
 export { BASE as API_BASE };

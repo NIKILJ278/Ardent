@@ -419,5 +419,80 @@ console.log('\n  — currency —');
   seedLive();
 }
 
+/* ── Date range picker ─────────────────────────────────────────────────── */
+{
+  console.log('\n  — date range picker —');
+  const { DatePanel } = await import('./src/components/shell/DateRangePicker.jsx');
+  const { resolvePeriod, PERIOD_PRESETS } = await import('./src/data/engine.js');
+  const { TODAY } = await import('./src/lib/clock.js');
+  const { iso } = await import('./src/lib/format.js');
+
+  const calls = { range: null, preset: null, cancelled: false };
+  const period = resolvePeriod('month');
+  const m = mount(
+    <DatePanel
+      presets={PERIOD_PRESETS.filter(p => p.id !== 'custom')}
+      periodId="month" period={period} minDate="2020-01-01"
+      onPreset={(id) => { calls.preset = id; }}
+      onRange={(a, b) => { calls.range = [a, b]; }}
+      onCancel={() => { calls.cancelled = true; }}
+    />,
+  );
+  const q = (sel) => [...m.host.querySelectorAll(sel)];
+  const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  const btn = (label) => q('button').find(b => b.textContent.trim() === label);
+  const dayBtn = (d) => q('.drp-day').find(b => b.getAttribute('aria-label') === d && !b.classList.contains('outside'));
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const monthDay = (n) => fmt(new Date(TODAY.getFullYear(), TODAY.getMonth(), n));
+  const apply = () => btn('Apply');
+
+  check(q('.drp-grid').length === 1, 'exactly one calendar is shown, not two');
+  check(q('.drp-input').length === 2, 'the start and end dates are typeable inputs');
+  check(!!btn('Cancel') && !!apply(), 'Cancel and Apply are there');
+  check(dayBtn(monthDay(1))?.classList.contains('edge'), 'the current period starts on the 1st, marked as the start');
+  check(q('.drp-day.today').length === 1, 'today is marked');
+
+  // A preset applies straight away; "Last 30 days" applies a range ending today.
+  click(btn('This Quarter'));
+  check(calls.preset === 'quarter', 'a preset in the rail applies that preset');
+  click(btn('Last 30 days'));
+  const span = (new Date(`${calls.range[1]}T00:00:00`) - new Date(`${calls.range[0]}T00:00:00`)) / 86400000;
+  check(calls.range[1] === iso(TODAY) && span === 29, '"Last 30 days" is 30 days ending today');
+
+  // Between: the first click starts a range, the second completes it.
+  calls.range = null;
+  click(btn('Between'));
+  click(dayBtn(monthDay(1)));
+  check(apply().disabled, 'Apply waits while only one end of the range is picked');
+  const lastDay = TODAY.getDate() > 1 ? TODAY.getDate() : 1;
+  click(dayBtn(monthDay(lastDay)));
+  check(!apply().disabled, 'the second click completes the range');
+  click(apply());
+  check(
+    calls.range?.[0] === iso(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1)) &&
+    calls.range?.[1] === iso(new Date(TODAY.getFullYear(), TODAY.getMonth(), lastDay)),
+    'Apply hands back exactly the picked range',
+  );
+
+  // Typing: a real date moves the range, nonsense is put back.
+  const setValue = (el, v) => act(() => {
+    Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(el, v);
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+  const blur = (el) => act(() => { el.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true })); });
+  const startInput = () => q('.drp-input')[0];
+  setValue(startInput(), 'not a date'); blur(startInput());
+  check(startInput().value !== 'not a date', 'a typed non-date is put back');
+  setValue(startInput(), '2026-09-03'); blur(startInput());
+  check(startInput().value === fmt(new Date(2026, 8, 3)), 'a typed date is accepted and shown in the same style');
+
+  check(q('.drp-day').every(b => b.disabled === (new Date(b.getAttribute('aria-label')) > TODAY || new Date(b.getAttribute('aria-label')) < new Date(2020, 0, 1))),
+    'days after today cannot be picked');
+
+  click(btn('Cancel'));
+  check(calls.cancelled, 'Cancel dismisses without applying');
+  m.unmount();
+}
+
 console.log(failed === 0 ? '\n  DOM tests passed.\n' : `\n  ${failed} DOM failure(s).\n`);
 process.exit(failed ? 1 : 0);

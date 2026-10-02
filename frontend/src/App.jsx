@@ -15,8 +15,9 @@ import Reports from './pages/Reports.jsx';
 import Catalogue from './pages/Catalogue.jsx';
 import Watchlist from './pages/Watchlist.jsx';
 import Settings from './pages/Settings.jsx';
+import Gst from './pages/Gst.jsx';
 import {
-  People, Insights, Customers, Marketing, Help, Finance, Reconciliation, Gst, Inventory,
+  People, Insights, Customers, Marketing, Help, Finance, Reconciliation, Inventory,
 } from './pages/Simple.jsx';
 
 /**

@@ -1,9 +1,45 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { define } from '../../data/glossary.js';
 import {
   ArrowUp, ArrowDown, Minus, Search, ChevronLeft, ChevronRight,
   ChevronsUpDown, X, Inbox, Check, AlertTriangle, AlertOctagon, Info,
 } from 'lucide-react';
+
+/* ── Term: a label that can say what it means ─────────────────────────────
+   Wraps a label and, when the glossary defines it, adds an (i) that shows the
+   definition on hover or keyboard focus. Undefined labels render unchanged. */
+
+export function Term({ k, children }) {
+  const def = define(k ?? (typeof children === 'string' ? children : null));
+  const [tip, setTip] = useState(null);
+  if (!def) return <>{children}</>;
+  const show = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const left = Math.min(Math.max(r.left + r.width / 2, 150), window.innerWidth - 150);
+    setTip({ left, top: r.bottom + 6 });
+  };
+  return (
+    <span className="term">
+      {children}
+      <span
+        className="term-i" tabIndex={0} role="button" aria-label={`What is ${def.name}?`}
+        onMouseEnter={show} onFocus={show} onMouseLeave={() => setTip(null)} onBlur={() => setTip(null)}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Info size={11} />
+      </span>
+      {tip && createPortal(
+        <div className="term-tip" role="tooltip" style={{ left: tip.left, top: tip.top }}>
+          <strong>{def.name}</strong>
+          <span>{def.text}</span>
+          {def.formula && <code>{def.formula}</code>}
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
 
 /* ── Delta ─────────────────────────────────────────────────────────────── */
 
@@ -259,7 +295,7 @@ export function DataTable({
                   onClick={c.sortable !== false ? () => toggleSort(c.key) : undefined}
                 >
                   <span className="hstack" style={{ gap: 4, justifyContent: c.align === 'right' ? 'flex-end' : 'flex-start' }}>
-                    {c.label}
+                    {c.term === false ? c.label : <Term k={c.term}>{c.label}</Term>}
                     {c.sortable !== false && sort?.key === c.key && (
                       sort.dir === 'asc' ? <ArrowUp size={11} /> : <ArrowDown size={11} />
                     )}
