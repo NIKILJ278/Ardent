@@ -328,6 +328,147 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; min-height: 
 }
 .pop-sep { height: 1px; background: var(--border); margin: 5px 0; }
 
+/* ── Custom date-range picker ────────────────────────────────────────────── */
+
+.dp-root {
+  padding: 12px;
+  user-select: none;
+}
+
+/* month navigation header */
+.dp-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.dp-nav {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--ink-2); cursor: pointer; flex-shrink: 0;
+  transition: background var(--step), border-color var(--step), color var(--step);
+}
+.dp-nav:hover { background: var(--surface-hover); border-color: var(--border-strong); color: var(--ink); }
+.dp-month-label {
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  flex: 1; text-align: center; letter-spacing: -0.01em;
+}
+.dp-month-sep { color: var(--ink-3); font-size: 13px; }
+
+/* two calendars side by side */
+.dp-panels {
+  display: flex; gap: 0; align-items: flex-start;
+}
+.dp-divider {
+  width: 1px; background: var(--border); align-self: stretch;
+  margin: 0 12px; flex-shrink: 0;
+}
+.dp-month { flex: 1; min-width: 0; }
+
+/* 7-column grid shared by header row and day cells */
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+/* day-of-week header */
+.dp-dow span {
+  text-align: center;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 4px 0 6px;
+}
+
+/* individual day cells */
+.dp-cells { gap: 2px; }
+.dp-day {
+  position: relative;
+  width: 100%; aspect-ratio: 1;
+  display: grid; place-items: center;
+  border: none; background: none;
+  border-radius: 6px;
+  font-size: 12.5px; font-weight: 450;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+  padding: 0;
+}
+.dp-day:hover:not(.dp-disabled):not(.dp-edge) {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+/* days outside the displayed month */
+.dp-out { color: var(--ink-3); opacity: 0.4; }
+
+/* days inside the selected range (not the endpoints) */
+.dp-in-range {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 0;
+}
+/* smooth rounded caps on first/last in a row */
+.dp-in-range:nth-child(7n+1) { border-radius: 6px 0 0 6px; }
+.dp-in-range:nth-child(7n)   { border-radius: 0 6px 6px 0; }
+
+/* start & end endpoints */
+.dp-edge {
+  background: var(--accent) !important;
+  color: var(--accent-ink) !important;
+  font-weight: 600;
+  border-radius: 6px !important;
+  z-index: 1;
+}
+
+/* today ring */
+.dp-today::after {
+  content: '';
+  position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--accent);
+}
+
+/* disabled */
+.dp-disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* selected range chips shown below calendars */
+.dp-selection {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 2px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+}
+.dp-sel-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 12px; font-weight: 500; color: var(--ink-2);
+  flex: 1; transition: border-color var(--step), color var(--step);
+}
+.dp-sel-chip.dp-sel-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.dp-placeholder { color: var(--ink-3); font-style: italic; }
+.dp-sel-arrow { color: var(--ink-3); font-size: 14px; }
+
+/* action buttons row */
+.dp-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding-top: 10px;
+}
+
+/* sync hint text */
+.dp-hint {
+  font-size: 11px; color: var(--ink-3);
+  padding-top: 8px; line-height: 1.4;
+}
+
 /* ── Drawer (drill-down) ─────────────────────────────────────────────────── */
 
 .scrim {

@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutGrid, TrendingUp, Wallet, Target, Users, FileText, Settings2,
   CircleHelp, Scale, Boxes, UserRound, Megaphone, Sparkles, Plug,
   PanelLeftClose, PanelLeft, Menu, Sun, Moon, Bell, ChevronDown, Check,
   Download, Calendar, Building2, Store, Barcode, Receipt, Eye, LogOut,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState.jsx';
 import { useSession } from '../../state/Session.jsx';
@@ -226,16 +227,189 @@ function ChannelSelector() {
 
 /* ── Period + comparison ───────────────────────────────────────────────── */
 
+/* Small helpers for the calendar */
+const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const MONTHS = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December',
+];
+
+function calDays(year, month) {
+  // returns array of Date objects for every cell in a 6-row calendar grid
+  const first = new Date(year, month, 1);
+  const start = new Date(first);
+  start.setDate(start.getDate() - start.getDay()); // rewind to Sunday
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    cells.push(new Date(start));
+    start.setDate(start.getDate() + 1);
+  }
+  return cells;
+}
+
+function toYMD(d) {
+  // "2026-10-02" from a Date object
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function CalendarMonth({ year, month, rangeStart, rangeEnd, hovered, onDay, onHover, minDate, maxDate }) {
+  const cells = useMemo(() => calDays(year, month), [year, month]);
+  return (
+    <div className="dp-month">
+      <div className="dp-grid dp-dow">
+        {DAYS.map(d => <span key={d}>{d}</span>)}
+      </div>
+      <div className="dp-grid dp-cells">
+        {cells.map((d, i) => {
+          const ymd = toYMD(d);
+          const inMonth = d.getMonth() === month;
+          const isStart = ymd === rangeStart;
+          const isEnd = ymd === (rangeEnd || hovered);
+          const effectiveEnd = rangeEnd || hovered;
+          const lo = rangeStart && effectiveEnd ? (rangeStart < effectiveEnd ? rangeStart : effectiveEnd) : null;
+          const hi = rangeStart && effectiveEnd ? (rangeStart < effectiveEnd ? effectiveEnd : rangeStart) : null;
+          const inRange = lo && hi && ymd > lo && ymd < hi;
+          const isRangeEdge = isStart || isEnd;
+          const disabled = (minDate && ymd < minDate) || (maxDate && ymd > maxDate);
+          const today = ymd === toYMD(new Date());
+
+          return (
+            <button
+              key={i}
+              className={[
+                'dp-day',
+                !inMonth && 'dp-out',
+                isRangeEdge && 'dp-edge',
+                inRange && 'dp-in-range',
+                isStart && 'dp-start',
+                isEnd && 'dp-end',
+                today && !isRangeEdge && 'dp-today',
+                disabled && 'dp-disabled',
+              ].filter(Boolean).join(' ')}
+              onClick={() => !disabled && onDay(ymd)}
+              onMouseEnter={() => onHover(ymd)}
+              disabled={disabled}
+              tabIndex={inMonth ? 0 : -1}
+              aria-label={d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+              aria-pressed={isRangeEdge}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DateRangePicker({ value, onChange, minDate, maxDate, onApply, onCancel, hint }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [hovered, setHovered] = useState(null);
+  // picking: 'start' | 'end'
+  const [picking, setPicking] = useState('start');
+  const [local, setLocal] = useState(value ?? { start: '', end: '' });
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const handleDay = useCallback((ymd) => {
+    if (picking === 'start' || (local.start && local.end)) {
+      setLocal({ start: ymd, end: '' });
+      setPicking('end');
+    } else {
+      // picking end
+      const lo = ymd < local.start ? ymd : local.start;
+      const hi = ymd < local.start ? local.start : ymd;
+      setLocal({ start: lo, end: hi });
+      setPicking('start');
+    }
+  }, [picking, local]);
+
+  const next = viewMonth === 11 ? 0 : viewMonth + 1;
+  const nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+
+  const canApply = local.start && local.end;
+
+  return (
+    <div className="dp-root">
+      {/* header */}
+      <div className="dp-header">
+        <button className="dp-nav" onClick={prevMonth} aria-label="Previous month">
+          <ChevronLeft size={15} />
+        </button>
+        <span className="dp-month-label">{MONTHS[viewMonth]} {viewYear}</span>
+        <span className="dp-month-sep">–</span>
+        <span className="dp-month-label">{MONTHS[next]} {nextY}</span>
+        <button className="dp-nav" onClick={nextMonth} aria-label="Next month">
+          <ChevronRight size={15} />
+        </button>
+      </div>
+
+      {/* two months side by side */}
+      <div className="dp-panels">
+        <CalendarMonth
+          year={viewYear} month={viewMonth}
+          rangeStart={local.start} rangeEnd={local.end}
+          hovered={hovered}
+          onDay={handleDay} onHover={setHovered}
+          minDate={minDate} maxDate={maxDate}
+        />
+        <div className="dp-divider" />
+        <CalendarMonth
+          year={nextY} month={next}
+          rangeStart={local.start} rangeEnd={local.end}
+          hovered={hovered}
+          onDay={handleDay} onHover={setHovered}
+          minDate={minDate} maxDate={maxDate}
+        />
+      </div>
+
+      {/* selected range pill */}
+      <div className="dp-selection">
+        <span className={`dp-sel-chip${picking === 'start' ? ' dp-sel-active' : ''}`}>
+          <Calendar size={11} />
+          {local.start ? local.start : <span className="dp-placeholder">Start date</span>}
+        </span>
+        <span className="dp-sel-arrow">→</span>
+        <span className={`dp-sel-chip${picking === 'end' ? ' dp-sel-active' : ''}`}>
+          <Calendar size={11} />
+          {local.end ? local.end : <span className="dp-placeholder">End date</span>}
+        </span>
+      </div>
+
+      {/* actions */}
+      <div className="dp-actions">
+        <button className="btn btn-sm" onClick={onCancel}>Cancel</button>
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={!canApply}
+          onClick={() => canApply && onApply(local)}
+        >
+          Apply range
+        </button>
+      </div>
+
+      {hint && <div className="dp-hint">{hint}</div>}
+    </div>
+  );
+}
+
 function PeriodPicker() {
   const { periodId, setPeriodId, period, comparison, setComparison, customRange, setCustomRange } = useApp();
-  const [draft, setDraft] = useState(customRange ?? { start: '', end: '' });
+  const [showCal, setShowCal] = useState(false);
   const periodLabel = periodId === 'custom' && customRange
     ? `${fmtDate(period.start)} – ${fmtDate(period.end, 'long')}`
     : PERIOD_PRESETS.find(p => p.id === periodId)?.label ?? 'This Month';
-  // A preset name alone does not say which dates it resolved to.
   const rangeText = `${fmtDate(period.start)} – ${fmtDate(period.end, 'long')}`;
 
-  // Bounded to what the synced orders cover, read at render so it follows syncs.
   const minDate = DATA_RANGE.start ? iso(DATA_RANGE.start) : undefined;
   const maxDate = DATA_RANGE.end ? iso(DATA_RANGE.end) : undefined;
   const first = live.meta.range?.first;
@@ -243,7 +417,7 @@ function PeriodPicker() {
   return (
     <div className="hstack" style={{ gap: 6 }}>
       <Popover
-        width={250}
+        width={showCal ? 560 : 240}
         trigger={({ toggle }) => (
           <button className="btn" onClick={toggle}>
             <Calendar size={14} />
@@ -256,43 +430,34 @@ function PeriodPicker() {
         )}
       >
         {({ close }) => (
-          <>
-            <div className="pop-label">Period</div>
-            {PERIOD_PRESETS.filter(p => p.id !== 'custom').map(p => (
-              <button key={p.id} className={`pop-item${periodId === p.id ? ' on' : ''}`} onClick={() => { setPeriodId(p.id); close(); }}>
-                <span style={{ flex: 1 }}>{p.label}</span>
-                {periodId === p.id && <Check size={14} />}
+          showCal ? (
+            <DateRangePicker
+              value={customRange}
+              minDate={minDate}
+              maxDate={maxDate}
+              hint={first
+                ? `Data available from ${fmtDate(`${first}T00:00:00`, 'long')} to today.`
+                : 'No orders synced yet.'}
+              onApply={(range) => { setCustomRange(range); setPeriodId('custom'); setShowCal(false); close(); }}
+              onCancel={() => setShowCal(false)}
+            />
+          ) : (
+            <>
+              <div className="pop-label">Period</div>
+              {PERIOD_PRESETS.filter(p => p.id !== 'custom').map(p => (
+                <button key={p.id} className={`pop-item${periodId === p.id ? ' on' : ''}`} onClick={() => { setPeriodId(p.id); close(); }}>
+                  <span style={{ flex: 1 }}>{p.label}</span>
+                  {periodId === p.id && <Check size={14} />}
+                </button>
+              ))}
+              <div className="pop-sep" />
+              <button className="pop-item" onClick={() => setShowCal(true)}>
+                <Calendar size={14} style={{ color: 'var(--ink-3)' }} />
+                <span style={{ flex: 1 }}>Custom range…</span>
+                {periodId === 'custom' && customRange && <Check size={14} />}
               </button>
-            ))}
-            <div className="pop-sep" />
-            <div style={{ padding: '4px 9px 8px' }}>
-              <label className="label">Custom range</label>
-              <div className="hstack" style={{ gap: 6 }}>
-                <input
-                  type="date" className="input" value={draft.start}
-                  min={minDate} max={draft.end || maxDate}
-                  onChange={e => setDraft(d => ({ ...d, start: e.target.value }))}
-                />
-                <input
-                  type="date" className="input" value={draft.end}
-                  min={draft.start || minDate} max={maxDate}
-                  onChange={e => setDraft(d => ({ ...d, end: e.target.value }))}
-                />
-              </div>
-              <button
-                className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: 8 }}
-                disabled={!draft.start || !draft.end}
-                onClick={() => { setCustomRange(draft); setPeriodId('custom'); close(); }}
-              >
-                Apply range
-              </button>
-              <div className="tiny muted" style={{ marginTop: 7, lineHeight: 1.45 }}>
-                {first
-                  ? `Orders synced from ${fmtDate(`${first}T00:00:00`, 'long')} to today.`
-                  : 'No orders synced yet.'}
-              </div>
-            </div>
-          </>
+            </>
+          )
         )}
       </Popover>
 
