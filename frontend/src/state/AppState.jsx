@@ -23,6 +23,23 @@ const Ctx = createContext(null);
 const KEY = 'ardent.state.v2';
 const LEGACY_KEYS = ['ardent.state.v1'];
 
+// Default layout for each dashboard — ordered array of widget IDs that are visible.
+export const DEFAULT_DASHBOARD_LAYOUTS = {
+  overview: [
+    'status_banner',
+    'revenue_ladder',
+    'product_intelligence',
+    'market_mix',
+    'gmv_trend',
+    'financial_position',
+    'company_health',
+    'goals_timeline',
+    'data_sources',
+  ],
+  sales:    ['summary', 'by_channel', 'by_product', 'by_category', 'returns'],
+  ads:      ['summary', 'by_platform', 'roas_trend', 'spend_vs_revenue'],
+};
+
 function load() {
   try {
     for (const k of LEGACY_KEYS) localStorage.removeItem(k);
@@ -56,6 +73,9 @@ export function AppStateProvider({ children }) {
   const [notes, setNotes]     = useState(saved.notes ?? []);
   const [watches, setWatches] = useState(saved.watches ?? []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [dashboardLayout, setDashboardLayout] = useState(
+    () => saved.dashboardLayout ?? DEFAULT_DASHBOARD_LAYOUTS
+  );
 
   const setComparison = useCallback((id) => setComparisonRaw(validComparison(id)), []);
 
@@ -80,10 +100,39 @@ export function AppStateProvider({ children }) {
     try {
       localStorage.setItem(KEY, JSON.stringify({
         theme, channelId, roleId, periodId, customRange, comparison, healthConfig,
-        goals, events, notes, watches,
+        goals, events, notes, watches, dashboardLayout,
       }));
     } catch { /* storage may be unavailable — the app still works */ }
-  }, [theme, channelId, roleId, periodId, customRange, comparison, healthConfig, goals, events, notes, watches]);
+  }, [theme, channelId, roleId, periodId, customRange, comparison, healthConfig, goals, events, notes, watches, dashboardLayout]);
+
+  // Toggle a single widget on/off in a dashboard layout.
+  const toggleWidget = useCallback((dashboard, widgetId) => {
+    setDashboardLayout(prev => {
+      const current = prev[dashboard] ?? DEFAULT_DASHBOARD_LAYOUTS[dashboard] ?? [];
+      const next = current.includes(widgetId)
+        ? current.filter(id => id !== widgetId)
+        : [...current, widgetId];
+      return { ...prev, [dashboard]: next };
+    });
+  }, []);
+
+  // Move a widget up or down within a dashboard.
+  const moveWidget = useCallback((dashboard, widgetId, direction) => {
+    setDashboardLayout(prev => {
+      const current = [...(prev[dashboard] ?? DEFAULT_DASHBOARD_LAYOUTS[dashboard] ?? [])];
+      const idx = current.indexOf(widgetId);
+      if (idx === -1) return prev;
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= current.length) return prev;
+      [current[idx], current[swapIdx]] = [current[swapIdx], current[idx]];
+      return { ...prev, [dashboard]: current };
+    });
+  }, []);
+
+  // Reset a dashboard back to its default layout.
+  const resetLayout = useCallback((dashboard) => {
+    setDashboardLayout(prev => ({ ...prev, [dashboard]: DEFAULT_DASHBOARD_LAYOUTS[dashboard] }));
+  }, []);
 
   // One permission gate, shared by every component that renders a metric.
   const can = useMemo(() => makeCan(roleId), [roleId]);
@@ -183,6 +232,7 @@ export function AppStateProvider({ children }) {
     notes, addNote, removeNote,
     watches, addWatch, updateWatch, addWatchUpdate, closeWatch, reopenWatch, removeWatch,
     sidebarOpen, setSidebarOpen,
+    dashboardLayout, setDashboardLayout, toggleWidget, moveWidget, resetLayout,
     dataVersion,
     author,
     today: TODAY,
