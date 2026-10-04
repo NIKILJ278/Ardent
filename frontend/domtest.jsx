@@ -233,6 +233,62 @@ console.log('\n  — marking a watch from a point on the chart —');
   m2.unmount();
 }
 
+/* ── 3c. Opened bare, a watch is either a metric or a product ───────────── */
+
+console.log('\n  — picking a metric vs. a product —');
+{
+  // Bare (just the company) is exactly what the Watchlist page's own
+  // "New watch" button opens with — no chart, no row, nothing already chosen.
+  const m = mount(app(<WatchButton subject={{ company: BRAND_ID }} />));
+  click(document.querySelector('button'));
+  const modalText = () => document.querySelector('.modal-wrap').textContent;
+
+  const scopeBtn = (label) => [...document.querySelectorAll('.modal-wrap button')]
+    .find(b => b.textContent.trim() === label);
+  const productSelect = () => document.querySelector('.modal-wrap select[aria-label="Product"]');
+  check(!!scopeBtn('A metric, whole company') && !!scopeBtn('One product'),
+    'a bare watch offers the two starting points: a metric, or a product');
+  check(!productSelect(), 'whole company is the default — no product picker shown yet');
+
+  const inputs = [...document.querySelectorAll('.modal-wrap input.input')];
+  typeInto(inputs[0], 'Returns are creeping up');
+  const areas = [...document.querySelectorAll('.modal-wrap textarea')];
+  typeArea(areas[1], 'Keep an eye on it for three weeks.');
+  const save = () => [...document.querySelectorAll('.modal-wrap button')]
+    .find(b => b.textContent.trim() === 'Start watching');
+  check(!save().disabled, 'whole-company needs nothing more — title and decision are enough');
+
+  click(scopeBtn('One product'));
+  check(!!productSelect(), 'choosing "One product" reveals a product picker');
+  check(save().disabled, 'Start watching is disabled until a product is actually chosen');
+  check(modalText().includes('Pick a product above'), 'the form says so, rather than silently blocking');
+
+  const pick = [...productSelect().options].find(o => o.value)?.value ?? '';
+  act(() => {
+    const setter = Object.getOwnPropertyDescriptor(dom.window.HTMLSelectElement.prototype, 'value').set;
+    setter.call(productSelect(), pick);
+    productSelect().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  });
+  check(!save().disabled, 'picking a product enables the save button');
+  check(!modalText().includes('Pick a product above'), 'the placeholder text is gone once a product is picked');
+  m.unmount();
+}
+
+/* ── 3d. A watch opened from a specific place keeps that scope fixed ────── */
+
+console.log('\n  — a preset scope is not re-litigated —');
+{
+  const m = mount(app(
+    <WatchButton subject={{ company: BRAND_ID, product: 'gid://shopify/Product/1', title: 'Malabar returns' }} />
+  ));
+  click(document.querySelector('button'));
+  check(![...document.querySelectorAll('.modal-wrap button')].some(b => b.textContent.trim() === 'One product'),
+    'a watch opened on a specific product is not offered the company/product toggle');
+  check(!document.querySelector('.modal-wrap select[aria-label="Product"]'),
+    'no product picker either — the scope is already decided');
+  m.unmount();
+}
+
 /* ── 4. Nothing renders before a store is connected ────────────────────── */
 
 console.log('\n  — the empty state ─');

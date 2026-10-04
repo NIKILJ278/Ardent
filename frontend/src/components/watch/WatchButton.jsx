@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Eye } from 'lucide-react';
 import { useApp } from '../../state/AppState.jsx';
 import { Modal } from '../ui/index.jsx';
@@ -6,6 +6,7 @@ import {
   watchableMetrics, WATCH_METRICS, WINDOW_CHOICES, formatMetric,
   evaluateWatch, watchScopeLabel,
 } from '../../data/watchlist.js';
+import { productsFor, PRODUCT_BY_ID } from '../../data/catalog.js';
 import { iso, fmtDate, currencySymbol } from '../../lib/format.js';
 
 /**
@@ -19,6 +20,17 @@ import { iso, fmtDate, currencySymbol } from '../../lib/format.js';
 export function WatchForm({ subject, onClose }) {
   const { addWatch, companyId, today, can, author } = useApp();
   const metrics = watchableMetrics(can);
+
+  // Whoever opened this already decided a scope (a chart, a product row, a
+  // category drilldown) — that stands as-is. Opened bare, with nothing more
+  // than the company, the only two honest starting points are "the whole
+  // business" or "one product": a watch has to be one or the other, and
+  // guessing which product would be worse than asking.
+  const hasPresetScope = !!(subject.channel || subject.category || subject.subcategory || subject.product || subject.sku);
+  const products = useMemo(() => productsFor(subject.company ?? companyId), [subject.company, companyId]);
+  const [scopeMode, setScopeMode] = useState(subject.product ? 'product' : 'company');
+  const [productId, setProductId] = useState(subject.product ?? '');
+  const chosenProduct = PRODUCT_BY_ID[productId];
 
   const [f, setF] = useState(() => ({
     title: subject.title ?? '',
@@ -43,11 +55,16 @@ export function WatchForm({ subject, onClose }) {
   // the review date before anything is committed.
   const draft = {
     company: subject.company ?? companyId,
-    channel: subject.channel, category: subject.category,
-    subcategory: subject.subcategory, product: subject.product, sku: subject.sku,
+    ...(hasPresetScope
+      ? { channel: subject.channel, category: subject.category, subcategory: subject.subcategory,
+          product: subject.product, sku: subject.sku }
+      : scopeMode === 'product'
+        ? { product: productId || undefined, category: chosenProduct?.category, subcategory: chosenProduct?.subcategory }
+        : {}),
     metric: f.metric, windowDays: Number(f.windowDays), markedOn: f.markedOn,
   };
   const preview = evaluateWatch(draft, today);
+  const needsProduct = !hasPresetScope && scopeMode === 'product' && !productId;
 
   const submit = (e) => {
     e.preventDefault();
@@ -67,7 +84,7 @@ export function WatchForm({ subject, onClose }) {
     onClose();
   };
 
-  const ready = f.title.trim() && f.decision.trim();
+  const ready = f.title.trim() && f.decision.trim() && !needsProduct;
 
   return (
     <Modal
@@ -85,7 +102,36 @@ export function WatchForm({ subject, onClose }) {
       <form id="watch-form" onSubmit={submit} className="vstack" style={{ gap: 13 }}>
         <div className="watch-subject">
           <span className="tiny muted">Watching</span>
-          <div style={{ fontWeight: 600 }}>{watchScopeLabel(draft)}</div>
+
+          {!hasPresetScope && (
+            <div className="hstack" style={{ gap: 6, margin: '4px 0 2px' }}>
+              <button
+                type="button" className={`btn btn-sm${scopeMode === 'company' ? ' btn-primary' : ''}`}
+                onClick={() => setScopeMode('company')}
+              >
+                A metric, whole company
+              </button>
+              <button
+                type="button" className={`btn btn-sm${scopeMode === 'product' ? ' btn-primary' : ''}`}
+                onClick={() => setScopeMode('product')}
+              >
+                One product
+              </button>
+            </div>
+          )}
+          {!hasPresetScope && scopeMode === 'product' && (
+            <select
+              className="input" style={{ marginBottom: 4 }} aria-label="Product"
+              value={productId} onChange={e => setProductId(e.target.value)}
+            >
+              <option value="">— choose a product —</option>
+              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
+
+          <div style={{ fontWeight: 600 }}>
+            {needsProduct ? 'Pick a product above' : watchScopeLabel(draft)}
+          </div>
           {f.markedOn !== iso(today) && (
             <div className="tiny muted" style={{ marginTop: 2 }}>
               Marked as of {fmtDate(f.markedOn, 'long')} — picked from the chart, not today
