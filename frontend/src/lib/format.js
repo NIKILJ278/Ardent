@@ -169,12 +169,25 @@ export function periodRange(period) {
   return `${left} – ${fmtDate(e, 'long')}`;
 }
 
+/**
+ * Inclusive calendar-day count between two dates. Truncates to midnight
+ * before diffing: a period's `start` is always midnight but its `end` carries
+ * 23:59:59.999, so a raw millisecond diff comes out just under a full extra
+ * day and rounds up — every caller that skipped this step was overcounting
+ * by one day, silently (This Month 1–4 Oct read as 5 days, not 4; its
+ * previous-period comparison pulled in an extra day for the same reason).
+ */
+export function daysInclusive(start, end) {
+  if (!start || !end) return 0;
+  const a = new Date(start); a.setHours(0, 0, 0, 0);
+  const b = new Date(end);   b.setHours(0, 0, 0, 0);
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+}
+
 /** Inclusive day count, for "covers N days" captions. */
 export function periodDays(period) {
   if (!period?.start || !period?.end) return 0;
-  const a = new Date(period.start); a.setHours(0, 0, 0, 0);
-  const b = new Date(period.end);   b.setHours(0, 0, 0, 0);
-  return Math.max(1, Math.round((b - a) / 86400000) + 1);
+  return daysInclusive(period.start, period.end);
 }
 
 /** Filename-safe range, e.g. 2026-09-01_2026-09-30. */

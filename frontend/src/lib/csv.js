@@ -5,7 +5,7 @@
 // came from, so a file that does not say what window it covers is worse than no
 // file at all — someone will read it as current.
 
-import { iso, fmtDate, currencyCode } from './format.js';
+import { iso, fmtDate, currencyCode, daysInclusive } from './format.js';
 
 const esc = (v) => {
   const s = v == null ? '' : String(v);
@@ -50,7 +50,7 @@ export function exportMeta({ title, company, period, channel, extra = {} }) {
     Entity: company ?? 'All brands',
     'Date range': period ? `${fmtDate(period.start, 'long')} to ${fmtDate(period.end, 'long')}` : 'All dates',
     'Range (ISO)': period ? `${iso(period.start)} to ${iso(period.end)}` : '',
-    Days: period ? Math.round((period.end - period.start) / 86400000) + 1 : '',
+    Days: period ? daysInclusive(period.start, period.end) : '',
     Channel: channel ?? 'All channels',
     // A money column is ambiguous once the file leaves Ardent, so the currency
     // travels with it.

@@ -6,6 +6,8 @@ import { totals, series, groupBy } from './src/data/engine.js';
 import { BRAND_ID } from './fixture.js';
 import { define } from './src/data/glossary.js';
 import { computeGst, gstOn } from './src/data/gst.js';
+import { comparisonWindow } from './src/data/engine.js';
+import { daysInclusive } from './src/lib/format.js';
 
 const row = (date, product, variant, orderIds) => ({
   date, channel: 'shopify', category: 'Bedding', subcategory: 'Bedsheets',
@@ -68,6 +70,19 @@ check('recorded tax follows the same window', g.recordedTax === 7);
 const none = computeGst(gRows, [], null, win);
 check('with no default, unrated SKUs are counted but carry no tax', none.coverage.unrated === 2000 && Math.abs(none.total.gst - 100) < 0.01);
 check('a 0% default gives no GST on those SKUs', computeGst(gRows, [], 0, win).total.gst === 100);
+
+// Previous Period must be the same number of calendar days as the period
+// itself — This Month 1–4 Oct (4 days) must compare against a 4-day window,
+// not 5 (the bug: start at midnight vs end at 23:59:59.999 rounded up).
+const thisMonth = {
+  start: new Date(2026, 9, 1, 0, 0, 0, 0),
+  end: new Date(2026, 9, 4, 23, 59, 59, 999),
+};
+check('daysInclusive counts calendar days, not a fuzzy 23:59:59.999 diff', daysInclusive(thisMonth.start, thisMonth.end) === 4);
+const prev = comparisonWindow(thisMonth, 'previous');
+check('the previous period is the same length (4 days: 27–30 Sep)', daysInclusive(prev.start, prev.end) === 4);
+check('the previous period ends the day before the period starts', prev.end.getDate() === 30 && prev.end.getMonth() === 8);
+check('the previous period starts 27 Sep, not 26 Sep', prev.start.getDate() === 27 && prev.start.getMonth() === 8);
 
 if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
 console.log('\n  Order counting tests passed.');

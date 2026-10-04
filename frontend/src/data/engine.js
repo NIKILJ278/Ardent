@@ -13,7 +13,7 @@
 import { live, subscribe } from './live.js';
 import { COMPANIES, COMPANY_BY_ID, PRODUCT_BY_ID, skusForProduct } from './catalog.js';
 import { TODAY } from '../lib/clock.js';
-import { iso } from '../lib/format.js';
+import { iso, daysInclusive } from '../lib/format.js';
 
 export { TODAY } from '../lib/clock.js';
 
@@ -60,7 +60,7 @@ function refreshRange() {
   start.setHours(0, 0, 0, 0);
   DATA_RANGE.start = start;
   DATA_RANGE.end = end;
-  DATA_RANGE.days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  DATA_RANGE.days = daysInclusive(start, end);
 }
 
 subscribe(refreshRange);
@@ -127,7 +127,7 @@ export function isHistoricalComparison(mode) {
 }
 
 export function comparisonWindow(period, mode) {
-  const days = Math.max(1, Math.round((period.end - period.start) / 86400000) + 1);
+  const days = daysInclusive(period.start, period.end);
   if (mode === 'year') {
     const start = new Date(period.start); start.setFullYear(start.getFullYear() - 1);
     const end = new Date(period.end);     end.setFullYear(end.getFullYear() - 1);
@@ -542,8 +542,8 @@ export function budgetFor() { return null; }
 
 /** Straight-line forecast to period end from the real run-rate so far. */
 export function forecastFor(period, actualNet) {
-  const elapsed = Math.max(1, Math.round((Math.min(TODAY, period.end) - period.start) / 86400000) + 1);
-  const total = Math.max(1, Math.round((period.end - period.start) / 86400000) + 1);
+  const elapsed = daysInclusive(period.start, Math.min(TODAY, period.end));
+  const total = daysInclusive(period.start, period.end);
   return (actualNet / elapsed) * total;
 }
 
