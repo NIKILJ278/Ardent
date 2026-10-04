@@ -11,7 +11,7 @@ import { daysInclusive } from './src/lib/format.js';
 import { subjectFromScope } from './src/data/watchlist.js';
 import {
   normaliseOverviewLayout, normaliseOverviewKpis, overviewKpiValue,
-  DEFAULT_OVERVIEW_LAYOUT, DEFAULT_OVERVIEW_KPIS, OVERVIEW_KPI_SLOTS,
+  DEFAULT_OVERVIEW_LAYOUT, DEFAULT_OVERVIEW_KPIS, OVERVIEW_KPI_SLOTS, freshnessTone,
 } from './src/data/overview.js';
 
 const row = (date, product, variant, orderIds) => ({
@@ -106,7 +106,7 @@ check('a company-only scope leaves the rest undefined, not null or missing keys 
 // section the app has simply never asked this browser about before.
 check('an unknown id is dropped from a saved layout', !normaliseOverviewLayout(['ladder', 'not-a-real-section']).includes('not-a-real-section'));
 check('a saved layout with one section removed keeps it removed', !normaliseOverviewLayout(DEFAULT_OVERVIEW_LAYOUT.filter(id => id !== 'health')).includes('health'));
-check('a saved order is kept exactly, not re-sorted back to default', JSON.stringify(normaliseOverviewLayout(['sources', 'ladder'])) === JSON.stringify(['sources', 'ladder']));
+check('a saved order is kept exactly, not re-sorted back to default', JSON.stringify(normaliseOverviewLayout(['health', 'ladder'])) === JSON.stringify(['health', 'ladder']));
 check('garbage input falls back to the default layout, not a blank page', normaliseOverviewLayout(null).length === DEFAULT_OVERVIEW_LAYOUT.length);
 check('an empty layout (every section somehow dropped) also falls back, rather than rendering nothing', normaliseOverviewLayout([]).length > 0);
 
@@ -119,6 +119,14 @@ const model = { netSales: 500, grossSales: 700, orders: 4, aov: 125, units: 9, r
 check('each KPI id reads its own field off the sales model', overviewKpiValue('netSales', model) === 500 && overviewKpiValue('orders', model) === 4 && overviewKpiValue('returnPct', model) === 3);
 check('gross margin is withheld, not shown as a partial figure, when cost is incomplete', overviewKpiValue('grossMargin', { ...model, costComplete: false }) === null);
 check('an unrecognised id reads as null rather than throwing', overviewKpiValue('not-a-real-metric', model) === null);
+
+// The freshness badge escalates on the sync's own age, not a fixed look.
+const now = new Date('2026-10-10T12:00:00Z');
+check('a sync a few minutes old reads as good', freshnessTone(new Date('2026-10-10T11:50:00Z'), now) === 'good');
+check('a sync just under 24h old still reads as good', freshnessTone(new Date('2026-10-09T13:00:00Z'), now) === 'good');
+check('a sync 2 days old reads as a warning', freshnessTone(new Date('2026-10-08T12:00:00Z'), now) === 'warning');
+check('a sync past 72h old reads as critical', freshnessTone(new Date('2026-10-06T11:00:00Z'), now) === 'critical');
+check('no sync at all is neutral, not falsely "good"', freshnessTone(null, now) === 'neutral');
 
 if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
 console.log('\n  Order counting tests passed.');

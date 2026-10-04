@@ -270,23 +270,24 @@ export function FinancialFigure({ label, value, sub, tone, onClick }) {
 
 export function EventPointers({ pointers }) {
   if (!pointers.length) return null;
+  // A month with no event logged against it says the same thing every time —
+  // listed individually, six of those in a row read as six separate problems
+  // rather than the one real one (nothing has been logged yet).
+  const explained = pointers.filter(p => p.event);
+  const unexplained = pointers.filter(p => !p.event);
   return (
     <div className="ev-list">
-      {pointers.map((p, i) => (
+      {explained.map((p, i) => (
         <div className={`ev-item ${p.direction}`} key={i}>
           <span className="ev-move tnum">
             {p.move == null ? '·' : `${p.move >= 0 ? '↑' : '↓'} ${Math.abs(p.move).toFixed(0)}%`}
           </span>
           <span className="ev-body">
             <span className="ev-label">{p.label}</span>
-            {p.event ? (
-              <span className="ev-why">
-                {p.event.title}
-                {p.others > 0 && <span className="muted"> +{p.others} more</span>}
-              </span>
-            ) : (
-              <span className="ev-why muted">Unexplained — no event logged for this month</span>
-            )}
+            <span className="ev-why">
+              {p.event.title}
+              {p.others > 0 && <span className="muted"> +{p.others} more</span>}
+            </span>
           </span>
           {p.impact && (
             <span className="ev-impact" title={`${p.impact.channel}: average daily revenue in the ${p.impact.windowDays} days from the event against the ${p.impact.windowDays} before`}>
@@ -297,6 +298,19 @@ export function EventPointers({ pointers }) {
           {p.kind && <Pill tone="neutral" icon={false}>{p.kind}</Pill>}
         </div>
       ))}
+      {unexplained.length > 0 && (
+        <div className="ev-item neutral">
+          <span className="ev-move tnum">·</span>
+          <span className="ev-body">
+            <span className="ev-label">
+              You have {unexplained.length} month{unexplained.length === 1 ? '' : 's'} of movements without events.
+            </span>
+            <span className="ev-why muted">
+              <Link to="/goals#timeline">Log events</Link> to understand your trends.
+            </span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }

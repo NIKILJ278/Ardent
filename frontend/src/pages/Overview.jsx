@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, Sliders, TrendingUp, Plug, PenLine, Loader2,
+  ArrowRight, Sliders, TrendingUp, Plug, Loader2,
   TrendingDown, Minus, ShieldAlert, RefreshCw, LayoutGrid,
 } from 'lucide-react';
 import { useApp } from '../state/AppState.jsx';
@@ -14,46 +14,24 @@ import {
 import { companyHealth } from '../data/health.js';
 import {
   realizedLadder, productIntelligence, gmvTrend, trendAnnotations,
-  readings, lastUpdated, platformOptions,
+  readings, lastUpdated, freshnessTone, platformOptions,
   OVERVIEW_KPI_BY_ID, overviewKpiValue,
 } from '../data/overview.js';
-import {
-  dataSources, SOURCE_STATUS, timelineFor, EVENT_KINDS, EVENT_SOURCES,
-  eventImpact, resolveGoal,
-} from '../data/business.js';
+import { dataSources } from '../data/business.js';
 import { CHANNEL_BY_ID, channelsFor } from '../data/catalog.js';
-import { live, availability } from '../data/live.js';
+import { live } from '../data/live.js';
 import { money, num, pct, fmtDate, relativeTime, changePct } from '../lib/format.js';
-import { Card, Pill, Delta, Track, Empty } from '../components/ui/index.jsx';
+import { Card, Pill, Delta, Track } from '../components/ui/index.jsx';
 import { NotConnected } from '../components/ui/NotConnected.jsx';
 import { RevenueTrend, HealthGauge } from '../components/charts/index.jsx';
 import { subjectFromScope } from '../data/watchlist.js';
 import { PeriodPicker } from '../components/shell/Shell.jsx';
 import { HealthModal } from '../components/health/HealthBreakdown.jsx';
 import {
-  RevenueLadder, ProductIntelligence, Readings, FinancialFigure, EventPointers, MarketMix,
+  RevenueLadder, ProductIntelligence, Readings, EventPointers, MarketMix,
 } from '../components/overview/Sections.jsx';
 import { channelColor } from '../lib/channels.js';
 import { buildEventMarkers } from '../lib/markers.js';
-
-/**
- * Channels an event touched, each with the measured revenue movement, ordered
- * by how much they actually moved. Sorted by the data, never by a fixed list.
- */
-function channelImpacts(event, limit = 4) {
-  const rows = eventImpact(event);
-  return {
-    shown: rows.slice(0, limit).map(r => ({
-      key: r.channel,
-      name: CHANNEL_BY_ID[r.channel]?.name ?? r.channel,
-      color: channelColor(r.channel),
-      changePct: r.changePct,
-      partial: r.partial,
-      afterDays: r.afterDays,
-    })),
-    more: Math.max(0, rows.length - limit),
-  };
-}
 
 function greeting() {
   const h = new Date().getHours();
@@ -198,7 +176,7 @@ function Dashboard() {
   const {
     scope, prevScope, companyScope, prevCompanyScope, companyId, channelId,
     setChannelId, period, periodId, healthConfig, comparison, notes, events,
-    goals, dataVersion, overviewLayout, overviewKpis,
+    dataVersion, overviewLayout, overviewKpis,
   } = useApp();
   const { user } = useSession();
   const { open } = useDrill();
@@ -206,9 +184,6 @@ function Dashboard() {
 
   const company = COMPANY_BY_ID[companyId];
   const firstName = (user?.full_name || '').trim().split(' ')[0];
-  const avail = useMemo(() => availability(), [dataVersion]);
-
-  const fin = useMemo(() => financials(scope), [scope]);
 
   // Company Health describes the whole company, so it is deliberately NOT
   // scoped to the channel filter — one channel has no cash position of its own.
@@ -267,7 +242,6 @@ function Dashboard() {
       : pct(raw);
     return { id, label: k.label, value, tone: 'neutral' };
   }).filter(Boolean);
-  const channelName = CHANNEL_BY_ID[channelId]?.name;
 
   // Always company-wide: the point of this strip is to compare channels, so it
   // must not collapse to a single row when the channel filter is on.
@@ -278,15 +252,6 @@ function Dashboard() {
   );
 
   const sources = useMemo(() => dataSources(), [dataVersion]);
-  const timeline = useMemo(
-    () => timelineFor([...events, ...notes], companyId, period),
-    [events, notes, companyId, period]
-  );
-
-  const liveGoals = useMemo(
-    () => goals.filter(g => g.company === companyId).map(g => resolveGoal(g, scope, period)),
-    [goals, companyId, scope, period]
-  );
 
   /* The Overview's own reads. Each one calls the model the deeper module calls,
      so the command centre and the detail pages cannot disagree. */
@@ -333,10 +298,15 @@ function Dashboard() {
           <span className="tiny muted d-none d-xl-block">
             {fmtDate(period.start, 'long')} — {fmtDate(period.end, 'long')}
           </span>
-          {/* Freshness, stated quietly. A number is only as good as its sync. */}
+          {/* Every figure on this page is only as current as this — it escalates
+              on its own once the sync is actually stale, rather than reading
+              the same quiet grey at 2 minutes and at 2 days. */}
           {freshness && (
-            <span className="freshness" title={`${freshness.source} · ${freshness.count} live connection(s)`}>
-              <span className="dot good" />
+            <span
+              className={`freshness ${freshnessTone(freshness.at)}`}
+              title={`${freshness.source} · ${freshness.count} live connection(s)`}
+            >
+              <span className={`dot ${freshnessTone(freshness.at)}`} />
               Last synced {relativeTime(freshness.at)}
             </span>
           )}
@@ -439,47 +409,6 @@ function Dashboard() {
               </Card>
             );
 
-          case 'financials':
-            // Only what orders can answer is a figure.
-            return (
-              <div key={id}>
-                <div className="spread" style={{ alignItems: 'baseline', marginBottom: 10 }}>
-                  <span className="section-title" style={{ marginBottom: 0 }}>
-                    Financial position{channelFiltered ? ` — ${channelName} only` : ''}
-                  </span>
-                  <Link to="/finance" className="linkish">Finance module <ArrowRight size={13} /></Link>
-                </div>
-                <div className="fin-grid">
-                  <FinancialFigure label="Gross Sales" value={money(fin.grossSales)} sub="before deductions" />
-                  <FinancialFigure
-                    label="Net Sales" value={money(fin.netSales)}
-                    sub="after returns, cancellations and discounts"
-                    onClick={() => open({ type: 'metric', label: 'Net Sales', metric: 'netSales', scope })}
-                  />
-                  <FinancialFigure
-                    label="Cost of Goods"
-                    value={fin.costComplete ? money(fin.cogs) : 'Not connected'}
-                    sub={fin.costComplete ? 'from your product unit costs' : 'needs a unit cost on every product'}
-                  />
-                  <FinancialFigure
-                    label="Gross Margin"
-                    value={fin.costComplete ? money(fin.grossProfit) : 'Not connected'}
-                    sub={fin.costComplete ? pct(fin.grossMarginPct) : 'needs cost of goods'}
-                    tone={fin.costComplete && fin.grossProfit < 0 ? 'critical' : undefined}
-                  />
-                </div>
-                <div style={{ marginTop: 10 }}>
-                  <NotConnected
-                    title="Cash, runway, receivables, payables and net margin"
-                    needs="bank statements and accounting"
-                  >
-                    Order data cannot answer these. They stay blank rather than being modelled from an
-                    assumed cost base.
-                  </NotConnected>
-                </div>
-              </div>
-            );
-
           case 'health':
             // Unscored dimensions say so and are left out.
             return (
@@ -533,141 +462,6 @@ function Dashboard() {
                     counted as zero.
                   </div>
                 )}
-              </Card>
-            );
-
-          case 'goals':
-            return (
-              <Card
-                key={id}
-                title="Goals & targets"
-                subtitle={liveGoals.length
-                  ? `${liveGoals.filter(g => g.status.id === 'ontrack' || g.status.id === 'achieved').length} of ${liveGoals.length} on track`
-                  : 'Nothing set yet'}
-                actions={<Link to="/goals" className="linkish">All goals <ArrowRight size={13} /></Link>}
-              >
-                {liveGoals.length === 0 ? (
-                  <Empty title="No goals yet">Set a target on the Goals page to track progress against it.</Empty>
-                ) : (
-                  <div className="vstack" style={{ gap: 14 }}>
-                    {liveGoals.slice(0, 4).map(g => (
-                      <div key={g.id}>
-                        <div className="spread" style={{ marginBottom: 5 }}>
-                          <span className="small" style={{ fontWeight: 500 }}>{g.name}</span>
-                          <Pill tone={g.status.tone}>{g.status.label}</Pill>
-                        </div>
-                        <Track value={g.progress} tone={g.status.tone} markerAt={100} />
-                        <div className="spread tiny muted" style={{ marginTop: 4 }}>
-                          <span className="tnum">
-                            {g.current == null ? 'not measurable' : g.isPct ? pct(g.current) : money(g.current)}
-                            {g.target != null && ` / ${g.isPct ? pct(g.target) : money(g.target)}`}
-                          </span>
-                          {g.forecast != null && (
-                            <span className="tnum">Forecast {g.isPct ? pct(g.forecast) : money(g.forecast)}</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            );
-
-          case 'timeline':
-            return (
-              <Card
-                key={id}
-                title="Business timeline"
-                subtitle="Channel impact is revenue 7 days from the event vs the 7 before"
-                actions={<Link to="/goals#timeline" className="linkish">Manage <ArrowRight size={13} /></Link>}
-              >
-                {timeline.length === 0 ? (
-                  <Empty title="No events logged">Mark launches, price changes and campaigns to give the numbers context.</Empty>
-                ) : (
-                  <div className="tl">
-                    {timeline.slice(-6).reverse().map(e => {
-                      const kind = EVENT_KINDS[e.kind] ?? EVENT_KINDS.business;
-                      const src = EVENT_SOURCES[e.source] ?? EVENT_SOURCES.manual;
-                      const { shown: impacts, more } = channelImpacts(e, 3);
-                      return (
-                        <div className="tl-item" key={e.id}>
-                          <span className="tl-dot" style={{
-                            background: `var(--${kind.tone === 'good' ? 'good' : kind.tone === 'warning' ? 'warning' : kind.tone === 'serious' ? 'serious' : kind.tone === 'neutral' ? 'ink-3' : 'accent'})`,
-                          }} />
-
-                          <div className="tl-meta">
-                            <Pill tone={kind.tone === 'neutral' ? 'neutral' : kind.tone} icon={false}>{kind.label}</Pill>
-                            <span className="tl-date">{fmtDate(e.date + 'T12:00:00', 'long')}</span>
-                          </div>
-
-                          <div className="tl-title">{e.title}</div>
-
-                          {impacts.length > 0 && (
-                            <div className="tl-chans" title="Average daily revenue in the 7 days from this date, against the 7 days before">
-                              {impacts.map(c => (
-                                <span className="chan-chip" key={c.key}>
-                                  <span className="swatch" style={{ background: c.color }} />
-                                  {c.name}
-                                  {c.changePct == null
-                                    ? <span className="chip-delta flat">n/a</span>
-                                    : (
-                                      <span className={`chip-delta ${c.changePct >= 0 ? 'up' : 'down'}`}>
-                                        {c.changePct >= 0 ? '+' : '−'}{Math.abs(c.changePct).toFixed(1)}%
-                                      </span>
-                                    )}
-                                </span>
-                              ))}
-                              {more > 0 && <span className="chan-chip muted">+{more} more</span>}
-                            </div>
-                          )}
-
-                          {e.detail && <div className="tl-detail">{e.detail}</div>}
-
-                          <div className="tl-src" title={`${src.capture} source`}>
-                            {src.capture === 'Manual'
-                              ? <><PenLine size={10} /> Logged by {e.author ?? 'you'} in Ardent</>
-                              : <><Plug size={10} /> Captured from {src.label}</>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            );
-
-          case 'sources':
-            return (
-              <Card
-                key={id}
-                title="Data sources"
-                subtitle="Where these numbers come from"
-                actions={<Link to="/sources" className="linkish">Manage <ArrowRight size={13} /></Link>}
-              >
-                <div className="vstack" style={{ gap: 2 }}>
-                  {sources.map(s => {
-                    const st = SOURCE_STATUS[s.status];
-                    return (
-                      <div className="spread" key={s.id} style={{ padding: '6px 0' }}>
-                        <span className="hstack" style={{ gap: 8, minWidth: 0 }}>
-                          <span className={`dot ${st.tone}`} />
-                          <span className="small" style={{ fontWeight: 500 }}>{s.name}</span>
-                          <span className="tiny muted">{s.kind}</span>
-                        </span>
-                        <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                          {s.lastSync ? relativeTime(s.lastSync) : 'never synced'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                  {!avail.cogs && (
-                    <div className="tiny muted" style={{ paddingTop: 8, lineHeight: 1.55 }}>
-                      {avail.cogsPartial
-                        ? 'Some sold units have no unit cost, so cost of goods and margin are withheld until every one is costed.'
-                        : 'No unit costs found on your products, so cost of goods and margin cannot be computed.'}
-                    </div>
-                  )}
-                </div>
               </Card>
             );
 

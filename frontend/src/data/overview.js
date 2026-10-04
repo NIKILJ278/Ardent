@@ -31,11 +31,7 @@ export const OVERVIEW_SECTIONS = [
   { id: 'products', label: 'Product intelligence', blurb: 'What is carrying the business, what is not paying its way, and what is coming back.' },
   { id: 'markets', label: 'Markets', blurb: 'Where the demand came from, when the store sells in more than one currency. Hidden on its own when there is only one.' },
   { id: 'trend', label: 'GMV trend', blurb: 'GMV over time, with the business events that explain the movements.' },
-  { id: 'financials', label: 'Financial position', blurb: 'Gross sales down to gross margin, and what still needs a source.' },
   { id: 'health', label: 'Company health', blurb: 'The indicators chosen under "View health breakdown", scored from measured ratios.' },
-  { id: 'goals', label: 'Goals & targets', blurb: 'Progress against whatever is set on the Goals page.' },
-  { id: 'timeline', label: 'Business timeline', blurb: 'Launches, price changes and campaigns, with their revenue impact.' },
-  { id: 'sources', label: 'Data sources', blurb: 'What is connected, and when each one last synced.' },
 ];
 export const OVERVIEW_SECTION_BY_ID = Object.fromEntries(OVERVIEW_SECTIONS.map(s => [s.id, s]));
 export const DEFAULT_OVERVIEW_LAYOUT = OVERVIEW_SECTIONS.map(s => s.id);
@@ -121,17 +117,16 @@ export function realizedLadder(scope) {
     { id: 'cancellations', label: 'Cancellations', value: m.cancellations },
     { id: 'discounts', label: 'Discounts', value: m.discounts },
   ];
-  const toRealized = [
-    { id: 'fees', label: 'Payment gateway charges' },
-    { id: 'logistics', label: 'Shipping & courier costs' },
-    { id: 'other', label: 'Warehousing, fulfilment & other' },
-  ];
 
+  // Payment gateway charges, courier cost and warehousing used to be listed
+  // here as three more "not connected" rows — real, but with nothing below
+  // them to say what connecting them would need, they just read as broken.
+  // The one honest thing the ladder can still say about them is in the
+  // "Final Realized Sales" anchor above and the foot note below.
   const rows = [
     { id: 'gmv', label: 'GMV', kind: 'head', value: m.grossSales, pct: 100 },
     ...toNet.map(r => ({ ...r, kind: 'deduct', pct: pctOfGmv(r.value) })),
     { id: 'netSales', label: 'Net Sales', kind: 'subtotal', value: m.netSales, pct: pctOfGmv(m.netSales) },
-    ...toRealized.map(r => ({ ...r, kind: 'missing', value: null, pct: null })),
     { id: 'realized', label: 'Final Realized Sales', kind: 'total', value: null, pct: null, missing: true },
   ];
 
@@ -445,6 +440,17 @@ export function lastUpdated(sources) {
   if (!synced.length) return null;
   const newest = synced.reduce((a, s) => (s.lastSync > a.lastSync ? s : a));
   return { at: newest.lastSync, source: newest.name, count: synced.length };
+}
+
+/**
+ * How urgently a sync's age should read. Every figure on the page is only as
+ * current as this, so it needs to escalate on its own rather than sit at the
+ * same quiet grey whether it says "2 minutes ago" or "2 days ago".
+ */
+export function freshnessTone(at, now = new Date()) {
+  if (!at) return 'neutral';
+  const hours = (now - new Date(at)) / 3600000;
+  return hours > 72 ? 'critical' : hours > 24 ? 'warning' : 'good';
 }
 
 /** Platforms the CEO can switch between, from what this brand actually sells on. */

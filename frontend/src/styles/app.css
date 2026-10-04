@@ -1015,8 +1015,14 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; min-height: 
 /* Sync freshness — present, never loud. */
 .freshness {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11.5px; color: var(--ink-3);
+  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border);
 }
+/* Escalates on its own once the sync is actually stale — a figure built on a
+   2-day-old sync should not read as quietly as one built on a fresh one. */
+.freshness.warning { background: var(--warning-soft); color: var(--warning-ink); border-color: transparent; font-weight: 600; }
+.freshness.critical { background: var(--critical-soft); color: var(--critical-ink); border-color: transparent; font-weight: 600; }
 
 @media (max-width: 720px) {
   .rev-arrow { display: none; }

@@ -395,11 +395,19 @@ console.log('\n  — overview command centre —');
   const m = mount(app(<Overview />));
   const text = document.body.textContent;
 
-  // The five questions, in the order the CEO should meet them.
-  const order = ['Revenue', 'Product intelligence', 'GMV performance', 'Financial position', 'Company Health'];
+  // The questions left on the default layout, in order. Financial position,
+  // Goals & targets, Business timeline and Data sources were removed — each
+  // either duplicated a number shown elsewhere with no connected source of
+  // its own, or had nothing to show until something is actually logged.
+  const order = ['Revenue', 'Product intelligence', 'GMV performance', 'Company Health'];
   const at = order.map(t => text.indexOf(t));
   check(at.every(i => i >= 0), `every section is present: ${order.filter((_, i) => at[i] < 0).join(', ') || 'all'}`);
   check(at.every((v, i) => i === 0 || v > at[i - 1]), `sections appear in order: ${order.join(' → ')}`);
+  check(!text.includes('Financial position'), 'Financial position no longer duplicates the ladder');
+  for (const label of ['Cash', 'Runway', 'Receivables', 'Payables']) {
+    check(![...document.querySelectorAll('.fin-fig-label')].map(n => n.textContent.trim()).includes(label),
+      `${label} is not presented as a figure`);
+  }
 
   // Section 1 — the ladder runs GMV to Final Realized Sales.
   check(text.includes('From GMV to final realized sales'), 'the revenue subtitle is right');
@@ -409,11 +417,16 @@ console.log('\n  — overview command centre —');
   check(ladderLabels[ladderLabels.length - 1] === 'Final Realized Sales',
     `the ladder ends at Final Realized Sales (${ladderLabels[ladderLabels.length - 1]})`);
   check(ladderLabels.includes('Net Sales'), 'Net Sales is a subtotal in the middle');
-
-  // The rows it cannot fill must be visibly unfilled, not quietly absent.
+  // The three detail rows for gateway/courier/warehousing were removed —
+  // three "not connected" rows with nothing below them to explain what
+  // connecting them would need just read as broken, not honest. Only the
+  // Final Realized Sales total (also unconnected) still says so.
+  check(ladderLabels.filter(l => l.includes('Payment gateway') || l.includes('courier') || l.includes('Warehousing')).length === 0,
+    'the three unconnected deduction rows are gone');
   const missing = [...document.querySelectorAll('.rev-ladder .ladder-row.missing')];
-  check(missing.length >= 3, `the unmeasurable deductions are listed as missing (${missing.length})`);
-  check(missing.every(r => r.textContent.includes('not connected')), 'each one is tagged "not connected"');
+  check(missing.length === 1 && missing[0].textContent.includes('Final Realized Sales'),
+    `only the realized-sales total is left marked missing (${missing.length})`);
+  check(missing.every(r => r.textContent.includes('not connected')), 'it is tagged "not connected"');
   check(!!document.querySelector('.rev-anchor-value.unknown'), 'final realized sales is marked unknown');
 
   // Section 2 — three product cards, none of them a table.
@@ -421,20 +434,11 @@ console.log('\n  — overview command centre —');
     'the product cards render');
   check(document.querySelectorAll('.pi-row').length > 0, 'product rows render');
 
-  // Section 4 — the financial strip carries only what orders can answer.
-  const finLabels = [...document.querySelectorAll('.fin-fig-label')].map(n => n.textContent.trim());
-  for (const label of ['Gross Sales', 'Net Sales', 'Cost of Goods', 'Gross Margin']) {
-    check(finLabels.includes(label), `financial position carries ${label}`);
-  }
-  for (const label of ['Cash', 'Runway', 'Receivables', 'Payables']) {
-    check(!finLabels.includes(label), `${label} is not presented as a figure`);
-  }
-  check(text.includes('Cash, runway, receivables, payables and net margin'),
-    'the missing financial position is stated instead');
-
-  // Freshness is present but quiet.
+  // Freshness is a real badge now, not a line of tiny grey text, and it
+  // carries a tone — the fixture's sync is seeded as just now, so good.
   const fresh = document.querySelector('.freshness');
   check(!!fresh && fresh.textContent.includes('Last synced'), `freshness shown: "${fresh?.textContent.trim()}"`);
+  check(fresh?.classList.contains('good'), 'a just-synced source reads as good, not stale-looking');
 
   m.unmount();
 }
@@ -633,6 +637,44 @@ console.log('\n  — customizing the Overview —');
   m2.unmount();
 
   dom.window.localStorage.clear();
+}
+
+/* ── 10. Unexplained movements collapse to one prompt, not one row each ── */
+
+console.log('\n  — unexplained movements collapse into one prompt —');
+{
+  const { EventPointers } = await import('./src/components/overview/Sections.jsx');
+
+  const pointers = [
+    { direction: 'up', move: 12, label: 'Jan 2026', event: { title: 'Price increase' }, others: 0 },
+    { direction: 'down', move: 8, label: 'Feb 2026', event: null },
+    { direction: 'down', move: 4, label: 'Mar 2026', event: null },
+    { direction: 'up', move: 2, label: 'Apr 2026', event: null },
+  ];
+  const m = mount(app(<EventPointers pointers={pointers} />));
+  const text = document.body.textContent;
+
+  check(text.includes('Price increase'), 'a month with a logged event still shows it individually');
+  check(document.querySelectorAll('.ev-item').length === 2,
+    `one explained row plus one collapsed row, not four (${document.querySelectorAll('.ev-item').length})`);
+  check(text.includes('You have 3 months of movements without events.'),
+    'the three unexplained months collapse into a single, counted prompt');
+  check(!text.includes('Unexplained —'), 'the old one-line-per-month wording is gone');
+  const link = [...document.querySelectorAll('a')].find(a => a.textContent === 'Log events');
+  check(link?.getAttribute('href') === '/goals#timeline', 'it offers a way to actually fix that');
+  m.unmount();
+
+  // Nothing left unexplained: no collapsed row at all.
+  const m2 = mount(app(<EventPointers pointers={[pointers[0]]} />));
+  check(!document.body.textContent.includes('months of movements'),
+    'with everything explained, no leftover prompt appears');
+  m2.unmount();
+
+  // Exactly one unexplained month reads as singular, not "1 months".
+  const m3 = mount(app(<EventPointers pointers={[pointers[1]]} />));
+  check(document.body.textContent.includes('You have 1 month of movements without events.'),
+    'a single unexplained month is grammatically singular');
+  m3.unmount();
 }
 
 console.log(failed === 0 ? '\n  DOM tests passed.\n' : `\n  ${failed} DOM failure(s).\n`);

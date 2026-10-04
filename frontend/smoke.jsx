@@ -221,15 +221,18 @@ for (const [path, needle, what] of HONESTY) {
   }
 }
 
-/* With costs missing, margin must disappear rather than read as zero. */
+/* With costs missing, margin must disappear rather than read as zero.
+   Checked on /finance now — the Overview's own Financial Position panel was
+   removed for repeating Finance's numbers without adding a connected source
+   of its own, so the honesty guarantee is tested where the figure still lives. */
 try {
   seedLive({ costed: false });
-  const html = strip(inApp('/overview'));
-  if (!html.includes('needs a unit cost on every product')) {
+  const html = strip(inApp('/finance'));
+  if (!html.includes('Needs a cost per item on every product sold')) {
     throw new Error('the uncosted case does not explain the missing margin');
   }
-  if (!html.includes('needs cost of goods')) {
-    throw new Error('margin rendered a figure when no unit costs exist');
+  if (html.includes('Gross margin')) {
+    throw new Error('the gross margin row rendered despite no unit costs existing');
   }
   console.log('  OK   uncosted sales withhold margin instead of reporting zero');
 } catch (e) {
