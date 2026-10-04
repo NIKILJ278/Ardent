@@ -26,6 +26,7 @@ import { money, num, pct, fmtDate, relativeTime, changePct } from '../lib/format
 import { Card, Pill, Delta, Track, Empty } from '../components/ui/index.jsx';
 import { NotConnected } from '../components/ui/NotConnected.jsx';
 import { RevenueTrend, HealthGauge } from '../components/charts/index.jsx';
+import { subjectFromScope } from '../data/watchlist.js';
 import { PeriodPicker } from '../components/shell/Shell.jsx';
 import { HealthModal } from '../components/health/HealthBreakdown.jsx';
 import {
@@ -358,6 +359,7 @@ function Dashboard() {
           data={gmv}
           height={288}
           compareLabel={comparisonLabel(comparison)}
+          watchSubject={subjectFromScope(scope)}
           markers={gmvMarkers}
         />
 

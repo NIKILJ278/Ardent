@@ -12,6 +12,8 @@ import { money, num, pct, fmtDate, changePct } from '../../lib/format.js';
 import { DataTable, BarList, Pill, Delta, Card } from '../ui/index.jsx';
 import { NotConnected } from '../ui/NotConnected.jsx';
 import { RevenueTrend } from '../charts/index.jsx';
+import { WatchButton } from '../watch/WatchButton.jsx';
+import { subjectFromScope } from '../../data/watchlist.js';
 import { ExportMenu } from '../shell/Shell.jsx';
 import { channelColor } from '../../lib/channels.js';
 
@@ -168,7 +170,7 @@ function MetricLevel({ node, push, period, prevScope }) {
   const prevValue = prevFin[metric] ?? prevFin.netSales;
 
   const byChannel = groupBy(scope, 'channel');
-  const chartData = series(scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
+  const chartData = series(scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net, ts: d.ts }));
 
   // Composed figures get an explicit derivation. Only the ones real order data
   // can build are offered — there is no EBITDA or net profit to take apart.
@@ -221,8 +223,11 @@ function MetricLevel({ node, push, period, prevScope }) {
       )}
 
       {chartData.length > 1 && (
-        <Card title="Trend over the period">
-          <RevenueTrend data={chartData} height={200} showCompare={false} />
+        <Card
+          title="Trend over the period"
+          actions={<WatchButton subject={subjectFromScope(scope)} label="Watch" />}
+        >
+          <RevenueTrend data={chartData} height={200} showCompare={false} watchSubject={subjectFromScope(scope)} />
         </Card>
       )}
 
@@ -339,7 +344,7 @@ function ProductLevel({ node, push }) {
   const t = totals(node.scope);
   const m = salesModel(node.scope);
   const skus = skuBreakdown(node.scope);
-  const chartData = series(node.scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
+  const chartData = series(node.scope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net, ts: d.ts }));
 
   return (
     <div className="vstack" style={{ gap: 16 }}>
@@ -359,7 +364,9 @@ function ProductLevel({ node, push }) {
       </div>
 
       {chartData.length > 1 && (
-        <Card title="Daily revenue"><RevenueTrend data={chartData} height={190} showCompare={false} /></Card>
+        <Card title="Daily revenue">
+          <RevenueTrend data={chartData} height={190} showCompare={false} watchSubject={subjectFromScope(node.scope)} />
+        </Card>
       )}
 
       <Card title="Variants" subtitle="Each row is summed from that variant's own order lines" flush>
@@ -394,7 +401,7 @@ function SkuLevel({ node }) {
   const m = salesModel(variantScope);
   const t = totals(variantScope);
   const meta = variantById(sku.id);
-  const daily = series(variantScope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net }));
+  const daily = series(variantScope, 'day').map(d => ({ label: fmtDate(d.ts), value: d.net, ts: d.ts }));
 
   return (
     <div className="vstack" style={{ gap: 16 }}>
@@ -423,7 +430,8 @@ function SkuLevel({ node }) {
 
       {daily.length > 1 && (
         <Card title="Daily revenue for this variant">
-          <RevenueTrend data={daily} height={190} showCompare={false} />
+          <RevenueTrend data={daily} height={190} showCompare={false}
+            watchSubject={subjectFromScope(variantScope, { title: meta?.title ? `${meta.title}` : undefined })} />
         </Card>
       )}
 

@@ -209,6 +209,30 @@ console.log('\n  — the form saves —');
   m.unmount();
 }
 
+
+/* ── 3b. A watch marked from a past chart point says so, visibly ────────── */
+
+console.log('\n  — marking a watch from a point on the chart —');
+{
+  const m = mount(app(
+    <WatchButton subject={{ company: BRAND_ID, category: 'Bath', title: 'Bath returns', markedOn: '2026-08-14' }} />
+  ));
+  click(document.querySelector('button'));
+  const text = document.querySelector('.modal-wrap').textContent;
+  check(text.includes('Marked as of 14 Aug 2026'), 'the picked date is shown, not silently applied');
+  check(text.includes('picked from the chart'), 'it says the date did not come from today');
+  m.unmount();
+
+  // The ordinary path (no markedOn passed) must say nothing of the kind.
+  const m2 = mount(app(
+    <WatchButton subject={{ company: BRAND_ID, category: 'Bath', title: 'Bath returns' }} />
+  ));
+  click(document.querySelector('button'));
+  check(!document.querySelector('.modal-wrap').textContent.includes('Marked as of'),
+    'watching from today (no chart point) shows no such note');
+  m2.unmount();
+}
+
 /* ── 4. Nothing renders before a store is connected ────────────────────── */
 
 console.log('\n  — the empty state ─');

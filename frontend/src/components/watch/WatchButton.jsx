@@ -24,7 +24,9 @@ export function WatchForm({ subject, onClose }) {
     title: subject.title ?? '',
     metric: subject.metric ?? metrics[0].id,
     windowDays: 21,
-    markedOn: iso(today),
+    // Clicking a point on a chart marks that point's own day, not today — the
+    // whole reason to click a specific point is to flag what happened then.
+    markedOn: subject.markedOn ?? iso(today),
     target: '',
     owner: author,
     meetingTitle: '',
@@ -84,6 +86,11 @@ export function WatchForm({ subject, onClose }) {
         <div className="watch-subject">
           <span className="tiny muted">Watching</span>
           <div style={{ fontWeight: 600 }}>{watchScopeLabel(draft)}</div>
+          {f.markedOn !== iso(today) && (
+            <div className="tiny muted" style={{ marginTop: 2 }}>
+              Marked as of {fmtDate(f.markedOn, 'long')} — picked from the chart, not today
+            </div>
+          )}
         </div>
 
         <div>

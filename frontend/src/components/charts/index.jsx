@@ -1,9 +1,25 @@
+import { useState } from 'react';
 import {
   ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ReferenceLine, ReferenceDot, Cell,
 } from 'recharts';
-import { money, moneyScale } from '../../lib/format.js';
+import { money, moneyScale, iso } from '../../lib/format.js';
+import { WatchForm } from '../watch/WatchButton.jsx';
 import { LabelList } from 'recharts';
+
+/* An invisible hit target over every point, not just the one under the mouse
+   (Recharts only draws `dot` on hover otherwise) — so a point is clickable the
+   moment the chart is visible, not only after first hovering it. */
+function ClickableDot({ cx, cy, payload, onPick }) {
+  if (cx == null || cy == null) return null;
+  return (
+    <circle
+      cx={cx} cy={cy} r={9} fill="transparent"
+      style={{ cursor: 'pointer' }}
+      onClick={(e) => { e.stopPropagation(); onPick(payload); }}
+    />
+  );
+}
 
 /** Most events shown inside one tooltip before it is summarised. */
 const MAX_TIP_EVENTS = 4;
@@ -104,7 +120,7 @@ function Tip({ active, payload, label, labelFmt, valueFmt = money, markerByLabel
 
 export function RevenueTrend({
   data, height = 280, compareLabel = 'Previous Period',
-  showCompare = true, targetLine, markers = [], onMarkerClick,
+  showCompare = true, targetLine, markers = [], onMarkerClick, watchSubject,
 }) {
   const hasCompare = showCompare && data.some(d => d.compare != null);
   const markerByLabel = new Map(markers.map(m => [m.label, m]));
@@ -113,6 +129,10 @@ export function RevenueTrend({
     targetLine ?? 0, 1
   );
   const fmtTick = makeAxisFmt(axisMax);
+
+  // Any point can be marked, not just the latest one — a result noticed
+  // afterwards, from a past point on the chart, is still worth a watch.
+  const [watchPoint, setWatchPoint] = useState(null);
 
   return (
     <div>
@@ -156,7 +176,8 @@ export function RevenueTrend({
           <Area
             type="monotone" dataKey="value" name="Revenue"
             stroke="var(--series-1)" strokeWidth={2} fill="url(#revFill)"
-            dot={false} activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--chart-surface)' }}
+            dot={watchSubject ? <ClickableDot onPick={setWatchPoint} /> : false}
+            activeDot={{ r: 4, strokeWidth: 2, stroke: 'var(--chart-surface)' }}
           />
 
           {markers.map(m => {
@@ -192,7 +213,19 @@ export function RevenueTrend({
             <span className="muted" style={{ fontSize: 11 }}>— hover a date for detail</span>
           </span>
         )}
+        {watchSubject && (
+          <span className="legend-item muted" style={{ fontSize: 11 }}>
+            Click any point to watch it
+          </span>
+        )}
       </div>
+
+      {watchPoint && (
+        <WatchForm
+          subject={{ ...watchSubject, markedOn: iso(new Date(watchPoint.ts ?? watchPoint.date)) }}
+          onClose={() => setWatchPoint(null)}
+        />
+      )}
     </div>
   );
 }

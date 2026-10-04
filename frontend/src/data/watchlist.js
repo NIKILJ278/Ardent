@@ -127,6 +127,20 @@ function scopeOf(watch, start, end) {
   };
 }
 
+/**
+ * The inverse of `scopeOf`: a fact-table scope (company/channel/.../variant)
+ * as a `WatchButton` subject (company/channel/.../sku). Lets a chart or table
+ * already filtered to some scope offer "watch this" without restating it.
+ */
+export function subjectFromScope(scope, extra = {}) {
+  return {
+    company: scope.company, channel: scope.channel,
+    category: scope.category, subcategory: scope.subcategory,
+    product: scope.product, sku: scope.variant,
+    ...extra,
+  };
+}
+
 const metricFor = (watch) => WATCH_METRICS[watch.metric] ?? RETIRED_METRIC;
 
 /** "Brand · Shopify · Product · Variant" */

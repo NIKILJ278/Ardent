@@ -22,6 +22,7 @@ import { MatrixTable } from '../components/sales/MatrixTable.jsx';
 import { RevenueSplit } from '../components/sales/RevenueSplit.jsx';
 import { DailyOrders } from '../components/sales/DailyOrders.jsx';
 import { WatchButton } from '../components/watch/WatchButton.jsx';
+import { subjectFromScope } from '../data/watchlist.js';
 import { SalesToggleSection, MarketplaceEconomics } from '../components/sales/ChannelEconomics.jsx';
 import { channelColor } from '../lib/channels.js';
 import { buildEventMarkers } from '../lib/markers.js';
@@ -261,7 +262,7 @@ export default function Sales() {
           value={grain} onChange={setGrain} size="sm" />
       }>
         <RevenueTrend data={trend} height={230} markers={markers}
-          compareLabel={comparisonLabel(comparison)} />
+          compareLabel={comparisonLabel(comparison)} watchSubject={subjectFromScope(drillScope)} />
       </Card>
 
       {/* Sections */}

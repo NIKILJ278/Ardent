@@ -8,6 +8,7 @@ import { define } from './src/data/glossary.js';
 import { computeGst, gstOn } from './src/data/gst.js';
 import { comparisonWindow } from './src/data/engine.js';
 import { daysInclusive } from './src/lib/format.js';
+import { subjectFromScope } from './src/data/watchlist.js';
 
 const row = (date, product, variant, orderIds) => ({
   date, channel: 'shopify', category: 'Bedding', subcategory: 'Bedsheets',
@@ -83,6 +84,16 @@ const prev = comparisonWindow(thisMonth, 'previous');
 check('the previous period is the same length (4 days: 27–30 Sep)', daysInclusive(prev.start, prev.end) === 4);
 check('the previous period ends the day before the period starts', prev.end.getDate() === 30 && prev.end.getMonth() === 8);
 check('the previous period starts 27 Sep, not 26 Sep', prev.start.getDate() === 27 && prev.start.getMonth() === 8);
+
+// subjectFromScope: a query scope (…variant) read back as a WatchButton
+// subject (…sku) — a chart or table already filtered to some scope can offer
+// "watch this" without restating the scope by hand.
+const fullScope = { start: 0, end: 0, company: 'b1', channel: 'shopify', category: 'Bedding', subcategory: 'Bedsheets', product: 'p1', variant: 'v1' };
+check('every scope field carries across, variant renamed to sku', JSON.stringify(subjectFromScope(fullScope)) ===
+  JSON.stringify({ company: 'b1', channel: 'shopify', category: 'Bedding', subcategory: 'Bedsheets', product: 'p1', sku: 'v1' }));
+check('extra fields (title, markedOn) are layered on top', subjectFromScope({ company: 'b1' }, { title: 'X', markedOn: '2026-09-12' }).title === 'X');
+check('a company-only scope leaves the rest undefined, not null or missing keys dropped oddly',
+  subjectFromScope({ company: 'b1' }).channel === undefined && subjectFromScope({ company: 'b1' }).sku === undefined);
 
 if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
 console.log('\n  Order counting tests passed.');
