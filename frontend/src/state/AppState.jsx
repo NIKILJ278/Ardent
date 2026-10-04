@@ -3,6 +3,7 @@ import {
 } from 'react';
 import { resolvePeriod, comparisonWindow, TODAY, COMPARISON_MODES } from '../data/engine.js';
 import { DEFAULT_HEALTH_CONFIG, normaliseConfig } from '../data/health.js';
+import { normaliseOverviewLayout, normaliseOverviewKpis } from '../data/overview.js';
 import { newWatch } from '../data/watchlist.js';
 import { channelsFor } from '../data/catalog.js';
 import { live, subscribe } from '../data/live.js';
@@ -51,6 +52,8 @@ export function AppStateProvider({ children }) {
   const [healthConfig, setHealthConfig] = useState(
     () => normaliseConfig(saved.healthConfig ?? DEFAULT_HEALTH_CONFIG)
   );
+  const [overviewLayout, setOverviewLayoutRaw] = useState(() => normaliseOverviewLayout(saved.overviewLayout));
+  const [overviewKpis, setOverviewKpisRaw]     = useState(() => normaliseOverviewKpis(saved.overviewKpis));
   const [goals, setGoals]     = useState(saved.goals ?? []);
   const [events, setEvents]   = useState(saved.events ?? []);
   const [notes, setNotes]     = useState(saved.notes ?? []);
@@ -58,6 +61,8 @@ export function AppStateProvider({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const setComparison = useCallback((id) => setComparisonRaw(validComparison(id)), []);
+  const setOverviewLayout = useCallback((ids) => setOverviewLayoutRaw(normaliseOverviewLayout(ids)), []);
+  const setOverviewKpis   = useCallback((ids) => setOverviewKpisRaw(normaliseOverviewKpis(ids)), []);
 
   // The active brand is the session's; switching brand is a session action.
   const companyId = brandId ?? 'none';
@@ -80,10 +85,12 @@ export function AppStateProvider({ children }) {
     try {
       localStorage.setItem(KEY, JSON.stringify({
         theme, channelId, roleId, periodId, customRange, comparison, healthConfig,
+        overviewLayout, overviewKpis,
         goals, events, notes, watches,
       }));
     } catch { /* storage may be unavailable — the app still works */ }
-  }, [theme, channelId, roleId, periodId, customRange, comparison, healthConfig, goals, events, notes, watches]);
+  }, [theme, channelId, roleId, periodId, customRange, comparison, healthConfig,
+      overviewLayout, overviewKpis, goals, events, notes, watches]);
 
   // One permission gate, shared by every component that renders a metric.
   const can = useMemo(() => makeCan(roleId), [roleId]);
@@ -178,6 +185,7 @@ export function AppStateProvider({ children }) {
     comparison, setComparison,
     period, compareWindow, scope, prevScope, companyScope, prevCompanyScope,
     healthConfig, setHealthConfig,
+    overviewLayout, setOverviewLayout, overviewKpis, setOverviewKpis,
     goals, addGoal, updateGoal, removeGoal,
     events, addEvent, removeEvent,
     notes, addNote, removeNote,

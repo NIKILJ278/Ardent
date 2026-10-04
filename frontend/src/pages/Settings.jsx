@@ -1,10 +1,111 @@
 import { useState } from 'react';
-import { RotateCcw, Plus, LogOut } from 'lucide-react';
+import { RotateCcw, Plus, LogOut, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { useApp } from '../state/AppState.jsx';
 import { useSession } from '../state/Session.jsx';
 import { PERIOD_PRESETS, COMPARISON_MODES } from '../data/engine.js';
 import { DIMENSION_BY_ID, HEALTH_SLOTS } from '../data/health.js';
+import {
+  OVERVIEW_SECTIONS, OVERVIEW_SECTION_BY_ID, OVERVIEW_KPIS, OVERVIEW_KPI_BY_ID, OVERVIEW_KPI_SLOTS,
+} from '../data/overview.js';
 import { Card, Segmented, Pill, Modal } from '../components/ui/index.jsx';
+
+/* ── Reorder / remove / add-back, for a list of chosen ids ────────────────
+ * The same shape as Company Health's indicator chooser: a numbered "chosen"
+ * list with move/remove, and a grid of everything else to add back. `max`
+ * caps how many can be chosen at once; omit it for no cap (sections, unlike
+ * the four-slot KPI strip, can be as many or as few as make sense). */
+function ListPicker({ chosen, setChosen, all, byId, max, minLabel }) {
+  const full = max != null && chosen.length >= max;
+
+  // setChosen (setOverviewLayout / setOverviewKpis) takes the next array
+  // directly, not a React updater function — it re-normalises whatever it is
+  // given, so each call works off the `chosen` this render already has.
+  const toggle = (id) => setChosen(
+    chosen.includes(id) ? chosen.filter(x => x !== id)
+      : max != null && chosen.length >= max ? chosen
+      : [...chosen, id]
+  );
+  const move = (id, by) => {
+    const i = chosen.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= chosen.length) return;
+    const next = [...chosen];
+    [next[i], next[j]] = [next[j], next[i]];
+    setChosen(next);
+  };
+  const remove = (id) => {
+    if (chosen.length <= 1 && minLabel) return; // never an empty page
+    toggle(id);
+  };
+
+  return (
+    <div className="vstack" style={{ gap: 16 }}>
+      <div>
+        {max != null && (
+          <div className="spread" style={{ marginBottom: 8 }}>
+            <span className="tiny muted">{chosen.length} of {max} chosen</span>
+          </div>
+        )}
+        <div className="vstack" style={{ gap: 6 }}>
+          {chosen.map((id, i) => {
+            const item = byId[id];
+            if (!item) return null;
+            return (
+              <div className="hd-chosen" key={id}>
+                <span className="hd-ord tnum">{i + 1}</span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{item.label ?? 'Growth'}</span>
+                  {item.blurb && <span className="tiny muted" style={{ display: 'block' }}>{item.blurb}</span>}
+                </span>
+                <span className="hstack" style={{ gap: 2 }}>
+                  <button className="btn btn-ghost btn-icon btn-sm" title="Move up"
+                          disabled={i === 0} onClick={() => move(id, -1)}>
+                    <ChevronUp size={13} />
+                  </button>
+                  <button className="btn btn-ghost btn-icon btn-sm" title="Move down"
+                          disabled={i === chosen.length - 1} onClick={() => move(id, 1)}>
+                    <ChevronDown size={13} />
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-icon btn-sm" title="Remove"
+                    disabled={chosen.length <= 1 && !!minLabel}
+                    onClick={() => remove(id)}
+                  >
+                    <X size={13} />
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        {chosen.length <= 1 && minLabel && (
+          <div className="tiny muted" style={{ marginTop: 6 }}>{minLabel}</div>
+        )}
+      </div>
+
+      {chosen.length < all.length && (
+        <div>
+          <div className="section-title">Not shown</div>
+          <div className="hd-grid">
+            {all.filter(item => !chosen.includes(item.id)).map(item => (
+              <button
+                key={item.id} type="button" className="hd-card"
+                disabled={full} onClick={() => toggle(item.id)}
+                title={full ? `Remove one first — the strip holds ${max}` : item.blurb}
+              >
+                <span className="spread" style={{ gap: 8 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{item.label ?? 'Growth'}</span>
+                  <Plus size={14} className="muted" style={{ flex: 'none' }} />
+                </span>
+                {item.blurb && <span className="tiny" style={{ color: 'var(--ink-2)' }}>{item.blurb}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AddBrand({ onClose }) {
   const { createBrand } = useSession();
@@ -55,6 +156,7 @@ export default function Settings() {
   const {
     theme, setTheme, companyId, setCompanyId, healthConfig, setHealthConfig,
     periodId, setPeriodId, comparison, setComparison,
+    overviewLayout, setOverviewLayout, overviewKpis, setOverviewKpis,
   } = useApp();
   const { user, brands, signOut } = useSession();
   const [draft, setDraft] = useState(healthConfig.weights);
@@ -135,6 +237,41 @@ export default function Settings() {
             <select className="input" style={{ width: 220 }} value={comparison} onChange={e => setComparison(e.target.value)}>
               {COMPARISON_MODES.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
             </select>
+          </div>
+        </div>
+      </Card>
+
+      <Card
+        title="Customize your Overview"
+        subtitle="A CEO and a CFO read this page differently — choose what it leads with"
+        id="overview-layout"
+      >
+        <p className="tiny muted" style={{ margin: '0 0 14px' }}>
+          Nothing here changes what a figure means or how it is computed — only whether it shows,
+          and where.
+        </p>
+        <div className="vstack" style={{ gap: 22 }}>
+          <div>
+            <div className="section-title">Headline metrics</div>
+            <p className="tiny muted" style={{ margin: '0 0 10px' }}>
+              Up to {OVERVIEW_KPI_SLOTS} figures in the banner at the top of the Overview.
+            </p>
+            <ListPicker
+              chosen={overviewKpis} setChosen={setOverviewKpis}
+              all={OVERVIEW_KPIS} byId={OVERVIEW_KPI_BY_ID} max={OVERVIEW_KPI_SLOTS}
+            />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+            <div className="section-title">Page sections</div>
+            <p className="tiny muted" style={{ margin: '0 0 10px' }}>
+              What appears on the Overview below the banner, and in what order.
+            </p>
+            <ListPicker
+              chosen={overviewLayout} setChosen={setOverviewLayout}
+              all={OVERVIEW_SECTIONS} byId={OVERVIEW_SECTION_BY_ID}
+              minLabel="At least one section has to stay, or the page would be blank."
+            />
           </div>
         </div>
       </Card>

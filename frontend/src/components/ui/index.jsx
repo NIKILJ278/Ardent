@@ -80,9 +80,9 @@ export function Dot({ tone = 'neutral' }) {
 
 /* ── Cards ─────────────────────────────────────────────────────────────── */
 
-export function Card({ title, subtitle, actions, children, flush = false, className = '' }) {
+export function Card({ title, subtitle, actions, children, flush = false, className = '', id }) {
   return (
-    <div className={`card2 ${className}`}>
+    <div className={`card2 ${className}`} id={id}>
       {(title || actions) && (
         <div className="card2-head">
           <div style={{ minWidth: 0 }}>

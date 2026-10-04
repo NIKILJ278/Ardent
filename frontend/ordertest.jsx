@@ -9,6 +9,10 @@ import { computeGst, gstOn } from './src/data/gst.js';
 import { comparisonWindow } from './src/data/engine.js';
 import { daysInclusive } from './src/lib/format.js';
 import { subjectFromScope } from './src/data/watchlist.js';
+import {
+  normaliseOverviewLayout, normaliseOverviewKpis, overviewKpiValue,
+  DEFAULT_OVERVIEW_LAYOUT, DEFAULT_OVERVIEW_KPIS, OVERVIEW_KPI_SLOTS,
+} from './src/data/overview.js';
 
 const row = (date, product, variant, orderIds) => ({
   date, channel: 'shopify', category: 'Bedding', subcategory: 'Bedsheets',
@@ -94,6 +98,27 @@ check('every scope field carries across, variant renamed to sku', JSON.stringify
 check('extra fields (title, markedOn) are layered on top', subjectFromScope({ company: 'b1' }, { title: 'X', markedOn: '2026-09-12' }).title === 'X');
 check('a company-only scope leaves the rest undefined, not null or missing keys dropped oddly',
   subjectFromScope({ company: 'b1' }).channel === undefined && subjectFromScope({ company: 'b1' }).sku === undefined);
+
+// A customizable Overview: a saved layout/KPI list is made safe, and a
+// removed section must stay removed — the bug this guards against is a
+// normaliser that "helpfully" re-adds anything it doesn't recognise as
+// already-saved, making a deliberate removal indistinguishable from a
+// section the app has simply never asked this browser about before.
+check('an unknown id is dropped from a saved layout', !normaliseOverviewLayout(['ladder', 'not-a-real-section']).includes('not-a-real-section'));
+check('a saved layout with one section removed keeps it removed', !normaliseOverviewLayout(DEFAULT_OVERVIEW_LAYOUT.filter(id => id !== 'health')).includes('health'));
+check('a saved order is kept exactly, not re-sorted back to default', JSON.stringify(normaliseOverviewLayout(['sources', 'ladder'])) === JSON.stringify(['sources', 'ladder']));
+check('garbage input falls back to the default layout, not a blank page', normaliseOverviewLayout(null).length === DEFAULT_OVERVIEW_LAYOUT.length);
+check('an empty layout (every section somehow dropped) also falls back, rather than rendering nothing', normaliseOverviewLayout([]).length > 0);
+
+check('an unknown KPI id is dropped', !normaliseOverviewKpis(['growth', 'not-a-real-metric']).includes('not-a-real-metric'));
+check(`more than ${OVERVIEW_KPI_SLOTS} chosen metrics is capped, not silently kept`, normaliseOverviewKpis(['growth', 'netSales', 'grossSales', 'grossMargin', 'orders']).length === OVERVIEW_KPI_SLOTS);
+check('an empty KPI list falls back to the three defaults', JSON.stringify(normaliseOverviewKpis([])) === JSON.stringify(DEFAULT_OVERVIEW_KPIS));
+check('a removed (but still known) KPI stays removed, same as a section', !normaliseOverviewKpis(['netSales']).includes('growth'));
+
+const model = { netSales: 500, grossSales: 700, orders: 4, aov: 125, units: 9, returnPct: 3, cancelPct: 1, discountPct: 8, costComplete: true, grossMarginPct: 40 };
+check('each KPI id reads its own field off the sales model', overviewKpiValue('netSales', model) === 500 && overviewKpiValue('orders', model) === 4 && overviewKpiValue('returnPct', model) === 3);
+check('gross margin is withheld, not shown as a partial figure, when cost is incomplete', overviewKpiValue('grossMargin', { ...model, costComplete: false }) === null);
+check('an unrecognised id reads as null rather than throwing', overviewKpiValue('not-a-real-metric', model) === null);
 
 if (failed) { console.error(`\n${failed} failed`); process.exit(1); }
 console.log('\n  Order counting tests passed.');

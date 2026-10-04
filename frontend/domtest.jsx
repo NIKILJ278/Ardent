@@ -574,5 +574,66 @@ console.log('\n  — currency —');
   m.unmount();
 }
 
+/* ── 9. The Overview is customizable, from Settings, and it sticks ──────── */
+
+console.log('\n  — customizing the Overview —');
+{
+  const { default: Settings } = await import('./src/pages/Settings.jsx');
+  const { default: Overview } = await import('./src/pages/Overview.jsx');
+  dom.window.localStorage.clear();
+  localStorage.setItem('ardent.brand', BRAND_ID);
+  seedLive();
+
+  const m = mount(app(<Settings />, '/settings'));
+  const text = () => document.body.textContent;
+  check(text().includes('Customize your Overview'), 'Settings offers the customization card');
+  check(text().includes('3 of 4 chosen'), 'the three default headline metrics are pre-selected');
+
+  // Remove the Company Health section from the page.
+  const sectionRow = (label) => [...document.querySelectorAll('.hd-chosen')]
+    .find(row => row.textContent.includes(label));
+  const removeBtn = (row) => [...row.querySelectorAll('button')].find(b => b.getAttribute('title') === 'Remove');
+  click(removeBtn(sectionRow('Company health')));
+  check(!document.querySelector('.hd-chosen')?.textContent.includes('Company health') &&
+    ![...document.querySelectorAll('.hd-chosen')].some(r => r.textContent.includes('Company health')),
+    'Company health moved out of the chosen list');
+  check([...document.querySelectorAll('.hd-card')].some(b => b.textContent.includes('Company health')),
+    'and into "Not shown", to be added back');
+
+  // Move "Product intelligence" to the very top.
+  const prodRow = () => sectionRow('Product intelligence');
+  // The headline-metrics picker renders first on the page and still holds its
+  // untouched 3 defaults at this point, so the section rows start right after.
+  const firstLabel = () => [...document.querySelectorAll('.hd-chosen')][3].textContent;
+  check(!firstLabel().includes('Product intelligence'), 'product intelligence is not first by default');
+  const moveUp = (row) => [...row.querySelectorAll('button')].find(b => b.getAttribute('title') === 'Move up');
+  for (let i = 0; i < 9 && !firstLabel().includes('Product intelligence'); i++) click(moveUp(prodRow()));
+  check(firstLabel().includes('Product intelligence'), 'repeated "Move up" brings it to the top');
+
+  // Add a fourth headline metric.
+  const addKpi = (label) => [...document.querySelectorAll('.hd-card')].find(b => b.textContent.includes(label));
+  click(addKpi('Return Rate'));
+  check(text().includes('4 of 4 chosen'), 'a fourth metric can be added, up to the strip’s limit');
+  check(!!addKpi('Cancellation Rate')?.disabled, 'a fifth is refused once the strip is full');
+
+  m.unmount();
+
+  // The choices are a browser preference, not a one-off — a fresh mount of the
+  // Overview itself (a different page, a different render) must read them back.
+  const stored = JSON.parse(dom.window.localStorage.getItem('ardent.state.v2') ?? '{}');
+  check(!stored.overviewLayout.includes('health'), 'the removed section was actually persisted as removed');
+  check(stored.overviewLayout[0] === 'products', 'the reordered section was persisted in its new place');
+  check(stored.overviewKpis.length === 4, 'the fourth metric was persisted');
+
+  const m2 = mount(app(<Overview />, '/overview'));
+  const body = document.body.textContent;
+  check(!document.querySelector('.health-card'), 'Company Health no longer renders on the Overview');
+  check(document.querySelectorAll('.status-metric').length === 4, 'the banner shows all four chosen metrics');
+  check(body.includes('Return Rate') || body.includes('Return rate'), 'the newly added metric is one of them');
+  m2.unmount();
+
+  dom.window.localStorage.clear();
+}
+
 console.log(failed === 0 ? '\n  DOM tests passed.\n' : `\n  ${failed} DOM failure(s).\n`);
 process.exit(failed ? 1 : 0);

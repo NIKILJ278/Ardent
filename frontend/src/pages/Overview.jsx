@@ -2,19 +2,20 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight, Sliders, TrendingUp, Plug, PenLine, Loader2,
-  TrendingDown, Minus, ShieldAlert, RefreshCw,
+  TrendingDown, Minus, ShieldAlert, RefreshCw, LayoutGrid,
 } from 'lucide-react';
 import { useApp } from '../state/AppState.jsx';
 import { useSession } from '../state/Session.jsx';
 import { useDrill } from '../state/Drilldown.jsx';
 import {
-  financials, groupBy, healthBand, indicatorTone,
+  financials, salesModel, groupBy, healthBand, indicatorTone,
   COMPANY_BY_ID, comparisonLabel, businessPhase, growthTone,
 } from '../data/engine.js';
 import { companyHealth } from '../data/health.js';
 import {
   realizedLadder, productIntelligence, gmvTrend, trendAnnotations,
   readings, lastUpdated, platformOptions,
+  OVERVIEW_KPI_BY_ID, overviewKpiValue,
 } from '../data/overview.js';
 import {
   dataSources, SOURCE_STATUS, timelineFor, EVENT_KINDS, EVENT_SOURCES,
@@ -158,7 +159,7 @@ function StatusBanner({ phase, metrics }) {
       </span>
       <span className="status-metrics">
         {metrics.map(m => (
-          <span className="status-metric" key={m.label}>
+          <span className="status-metric" key={m.id ?? m.label}>
             <span className="status-metric-label">{m.label}</span>
             <span className="status-metric-value tnum">
               {m.value}
@@ -197,7 +198,7 @@ function Dashboard() {
   const {
     scope, prevScope, companyScope, prevCompanyScope, companyId, channelId,
     setChannelId, period, periodId, healthConfig, comparison, notes, events,
-    goals, dataVersion,
+    goals, dataVersion, overviewLayout, overviewKpis,
   } = useApp();
   const { user } = useSession();
   const { open } = useDrill();
@@ -241,21 +242,31 @@ function Dashboard() {
     : periodId === 'year'    ? 'YoY Growth'
     : 'Growth';
 
-  // Only measured figures earn a place in the banner. Margin joins it when
-  // every sold unit carried a cost; runway would need a bank connection.
-  const statusMetrics = [
-    {
-      label: growthLabel,
-      value: coGrowth == null ? '—' : `${coGrowth >= 0 ? '+' : '−'}${Math.abs(coGrowth).toFixed(1)}%`,
-      tone: growthTone(coGrowth),
-    },
-    { label: 'Net Sales', value: money(coFin.netSales), tone: 'neutral' },
-    {
-      label: 'Gross Margin',
-      value: coFin.costComplete ? pct(coFin.grossMarginPct) : 'not connected',
-      tone: 'neutral',
-    },
-  ];
+  // Company-wide, same as the rest of the banner — one channel has no growth
+  // rate or margin of its own that means anything on its own.
+  const coModel = useMemo(() => salesModel(companyScope), [companyScope]);
+
+  // Which figures sit in this strip, and in what order, is chosen in Settings
+  // — a CEO and a CFO read this banner differently. Only measured figures earn
+  // a place: margin joins it when every sold unit carried a cost, never a
+  // partial figure passed off as the whole one.
+  const statusMetrics = overviewKpis.map(id => {
+    if (id === 'growth') {
+      return {
+        id, label: growthLabel,
+        value: coGrowth == null ? '—' : `${coGrowth >= 0 ? '+' : '−'}${Math.abs(coGrowth).toFixed(1)}%`,
+        tone: growthTone(coGrowth),
+      };
+    }
+    const k = OVERVIEW_KPI_BY_ID[id];
+    if (!k) return null;
+    const raw = overviewKpiValue(id, coModel);
+    const value = raw == null ? 'not connected'
+      : k.fmt === 'money' ? money(raw)
+      : k.fmt === 'num' ? num(raw)
+      : pct(raw);
+    return { id, label: k.label, value, tone: 'neutral' };
+  }).filter(Boolean);
   const channelName = CHANNEL_BY_ID[channelId]?.name;
 
   // Always company-wide: the point of this strip is to compare channels, so it
@@ -329,301 +340,341 @@ function Dashboard() {
               Last synced {relativeTime(freshness.at)}
             </span>
           )}
+          <Link to="/settings#overview-layout" className="linkish tiny" title="Choose and reorder what this page shows">
+            <LayoutGrid size={12} /> Customize
+          </Link>
         </div>
       </div>
 
-      {/* 1 — Revenue. The hero: where the money starts and what survives. */}
-      <RevenueLadder
-        ladder={ladder}
-        platform={channelId}
-        platforms={platforms}
-        onPlatform={setChannelId}
-        delta={gmvDelta}
-      />
+      {/* Every section below is optional and reorderable — see Settings →
+          "Customize your Overview". `overviewLayout` names which appear and in
+          what order; what each one computes never changes, only its place on
+          the page. */}
+      {overviewLayout.map(id => {
+        switch (id) {
+          case 'ladder':
+            // The hero: where the money starts and what survives.
+            return (
+              <RevenueLadder
+                key={id}
+                ladder={ladder}
+                platform={channelId}
+                platforms={platforms}
+                onPlatform={setChannelId}
+                delta={gmvDelta}
+              />
+            );
 
-      {/* 2 — Product intelligence: what is winning, lagging, and coming back. */}
-      <ProductIntelligence intel={intel} />
+          case 'products':
+            // What is winning, lagging, and coming back.
+            return <ProductIntelligence key={id} intel={intel} />;
 
-      {/* Where in the world the demand came from, when there is a spread. */}
-      {markets.length > 1 && <MarketMix markets={markets} reporting={live.meta.currency} />}
+          case 'markets':
+            // Where in the world the demand came from, when there is a spread.
+            return markets.length > 1
+              ? <MarketMix key={id} markets={markets} reporting={live.meta.currency} /> : null;
 
-      {/* 3 — Revenue over time, with the events that explain the movements. */}
-      <Card
-        title="GMV performance"
-        subtitle={gmv.rolling
-          ? `Trailing ${gmv.months} months to ${fmtDate(period.end, 'long')} · your period is too short for a trend, so the chart widens`
-          : `Month on month against ${comparison === 'year' ? 'the same period last year' : 'the previous period'} · dots mark business events`}
-        actions={<span className="tiny muted">{num(pointers.length)} movement(s) explained below</span>}
-      >
-        <RevenueTrend
-          data={gmv}
-          height={288}
-          compareLabel={comparisonLabel(comparison)}
-          watchSubject={subjectFromScope(scope)}
-          markers={gmvMarkers}
-        />
+          case 'trend':
+            // Revenue over time, with the events that explain the movements.
+            return (
+              <Card
+                key={id}
+                title="GMV performance"
+                subtitle={gmv.rolling
+                  ? `Trailing ${gmv.months} months to ${fmtDate(period.end, 'long')} · your period is too short for a trend, so the chart widens`
+                  : `Month on month against ${comparison === 'year' ? 'the same period last year' : 'the previous period'} · dots mark business events`}
+                actions={<span className="tiny muted">{num(pointers.length)} movement(s) explained below</span>}
+              >
+                <RevenueTrend
+                  data={gmv}
+                  height={288}
+                  compareLabel={comparisonLabel(comparison)}
+                  watchSubject={subjectFromScope(scope)}
+                  markers={gmvMarkers}
+                />
 
-        <EventPointers pointers={pointers} />
+                <EventPointers pointers={pointers} />
 
-        {reads.length > 0 && (
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
-            <Readings items={reads} />
-            {byChannel.length > 1 && (
-              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(158px,1fr))', gap: 8 }}>
-                {byChannel.map(c => {
-                  const pv = prevByChannel.get(c.key);
-                  const ch = changePct(c.net, pv?.net);
-                  return (
-                    <button
-                      key={c.key}
-                      className="spread"
-                      style={{
-                        border: `1px solid ${channelId === c.key ? 'var(--accent)' : 'var(--border)'}`,
-                        borderRadius: 'var(--radius-sm)',
-                        padding: '8px 11px',
-                        background: channelId === c.key ? 'var(--accent-soft)' : 'var(--surface)',
-                        cursor: 'pointer', width: '100%',
-                      }}
-                      title={`Open ${CHANNEL_BY_ID[c.key]?.name ?? c.key} in detail`}
-                      onClick={() => open({
-                        type: 'channel',
-                        label: CHANNEL_BY_ID[c.key]?.name ?? c.key,
-                        scope: { ...companyScope, channel: c.key },
-                      })}
-                    >
-                      <span className="hstack" style={{ gap: 7, minWidth: 0 }}>
-                        <span className="swatch" style={{ background: channelColor(c.key) }} />
-                        <span className="small" style={{ fontWeight: 500 }}>{CHANNEL_BY_ID[c.key]?.name ?? c.key}</span>
-                      </span>
-                      <span className="hstack" style={{ gap: 8 }}>
-                        <span className="tiny muted tnum">{money(c.net)}</span>
-                        <Delta value={ch} />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </Card>
-
-      {/* 4 — Financial position. Only what orders can answer is a figure. */}
-      <div>
-        <div className="spread" style={{ alignItems: 'baseline', marginBottom: 10 }}>
-          <span className="section-title" style={{ marginBottom: 0 }}>
-            Financial position{channelFiltered ? ` — ${channelName} only` : ''}
-          </span>
-          <Link to="/finance" className="linkish">Finance module <ArrowRight size={13} /></Link>
-        </div>
-        <div className="fin-grid">
-          <FinancialFigure label="Gross Sales" value={money(fin.grossSales)} sub="before deductions" />
-          <FinancialFigure
-            label="Net Sales" value={money(fin.netSales)}
-            sub="after returns, cancellations and discounts"
-            onClick={() => open({ type: 'metric', label: 'Net Sales', metric: 'netSales', scope })}
-          />
-          <FinancialFigure
-            label="Cost of Goods"
-            value={fin.costComplete ? money(fin.cogs) : 'Not connected'}
-            sub={fin.costComplete ? 'from your product unit costs' : 'needs a unit cost on every product'}
-          />
-          <FinancialFigure
-            label="Gross Margin"
-            value={fin.costComplete ? money(fin.grossProfit) : 'Not connected'}
-            sub={fin.costComplete ? pct(fin.grossMarginPct) : 'needs cost of goods'}
-            tone={fin.costComplete && fin.grossProfit < 0 ? 'critical' : undefined}
-          />
-        </div>
-        <div style={{ marginTop: 10 }}>
-          <NotConnected
-            title="Cash, runway, receivables, payables and net margin"
-            needs="bank statements and accounting"
-          >
-            Order data cannot answer these. They stay blank rather than being modelled from an
-            assumed cost base.
-          </NotConnected>
-        </div>
-      </div>
-
-      {/* 5 — Company Health. Unscored dimensions say so and are left out. */}
-      <Card
-        className="health-card"
-        title="Company Health"
-        subtitle={channelFiltered
-          ? 'Based on your 5 key business indicators · always company-wide'
-          : 'Based on your 5 key business indicators'}
-        actions={
-          <button className="linkish" onClick={() => setShowHealth(true)}>
-            <Sliders size={13} /> View health breakdown <ArrowRight size={13} />
-          </button>
-        }
-      >
-        <div className="health compact">
-          <div className="health-score">
-            {health.overall == null ? (
-              <div className="health-empty">
-                <span className="small" style={{ fontWeight: 600 }}>No score yet</span>
-                <span className="tiny muted">None of your five indicators can be measured</span>
-              </div>
-            ) : (
-              <>
-                <HealthGauge score={health.overall} tone={band.tone} size={88} />
-                <Pill tone={band.tone}>{band.label}</Pill>
-              </>
-            )}
-          </div>
-
-          <div className="health-rows">
-            {health.dimensions.map(d => {
-              const s = health.scores[d.id];
-              return (
-                <div className="health-row" key={d.id} title={`${d.question} · ${d.basis}`}>
-                  <span className="nm">{d.label}</span>
-                  {s == null
-                    ? <span className="health-na">Not connected — needs {d.needs}</span>
-                    : <Track value={s} tone={indicatorTone(s)} />}
-                  <span className="sc tnum">{s == null ? '—' : s}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {health.scoredCount > 0 && health.unavailable.length > 0 && (
-          <div className="ladder-foot">
-            Scored on {health.scoredCount} of {health.dimensions.length} indicators. The rest need
-            sources that are not connected, and are left out of the overall score rather than
-            counted as zero.
-          </div>
-        )}
-      </Card>
-
-      {/* Goals + timeline */}
-      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(340px,1fr))' }}>
-        <Card
-          title="Goals & targets"
-          subtitle={liveGoals.length
-            ? `${liveGoals.filter(g => g.status.id === 'ontrack' || g.status.id === 'achieved').length} of ${liveGoals.length} on track`
-            : 'Nothing set yet'}
-          actions={<Link to="/goals" className="linkish">All goals <ArrowRight size={13} /></Link>}
-        >
-          {liveGoals.length === 0 ? (
-            <Empty title="No goals yet">Set a target on the Goals page to track progress against it.</Empty>
-          ) : (
-            <div className="vstack" style={{ gap: 14 }}>
-              {liveGoals.slice(0, 4).map(g => (
-                <div key={g.id}>
-                  <div className="spread" style={{ marginBottom: 5 }}>
-                    <span className="small" style={{ fontWeight: 500 }}>{g.name}</span>
-                    <Pill tone={g.status.tone}>{g.status.label}</Pill>
-                  </div>
-                  <Track value={g.progress} tone={g.status.tone} markerAt={100} />
-                  <div className="spread tiny muted" style={{ marginTop: 4 }}>
-                    <span className="tnum">
-                      {g.current == null ? 'not measurable' : g.isPct ? pct(g.current) : money(g.current)}
-                      {g.target != null && ` / ${g.isPct ? pct(g.target) : money(g.target)}`}
-                    </span>
-                    {g.forecast != null && (
-                      <span className="tnum">Forecast {g.isPct ? pct(g.forecast) : money(g.forecast)}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        <Card
-          title="Business timeline"
-          subtitle="Channel impact is revenue 7 days from the event vs the 7 before"
-          actions={<Link to="/goals#timeline" className="linkish">Manage <ArrowRight size={13} /></Link>}
-        >
-          {timeline.length === 0 ? (
-            <Empty title="No events logged">Mark launches, price changes and campaigns to give the numbers context.</Empty>
-          ) : (
-            <div className="tl">
-              {timeline.slice(-6).reverse().map(e => {
-                const kind = EVENT_KINDS[e.kind] ?? EVENT_KINDS.business;
-                const src = EVENT_SOURCES[e.source] ?? EVENT_SOURCES.manual;
-                const { shown: impacts, more } = channelImpacts(e, 3);
-                return (
-                  <div className="tl-item" key={e.id}>
-                    <span className="tl-dot" style={{
-                      background: `var(--${kind.tone === 'good' ? 'good' : kind.tone === 'warning' ? 'warning' : kind.tone === 'serious' ? 'serious' : kind.tone === 'neutral' ? 'ink-3' : 'accent'})`,
-                    }} />
-
-                    <div className="tl-meta">
-                      <Pill tone={kind.tone === 'neutral' ? 'neutral' : kind.tone} icon={false}>{kind.label}</Pill>
-                      <span className="tl-date">{fmtDate(e.date + 'T12:00:00', 'long')}</span>
-                    </div>
-
-                    <div className="tl-title">{e.title}</div>
-
-                    {impacts.length > 0 && (
-                      <div className="tl-chans" title="Average daily revenue in the 7 days from this date, against the 7 days before">
-                        {impacts.map(c => (
-                          <span className="chan-chip" key={c.key}>
-                            <span className="swatch" style={{ background: c.color }} />
-                            {c.name}
-                            {c.changePct == null
-                              ? <span className="chip-delta flat">n/a</span>
-                              : (
-                                <span className={`chip-delta ${c.changePct >= 0 ? 'up' : 'down'}`}>
-                                  {c.changePct >= 0 ? '+' : '−'}{Math.abs(c.changePct).toFixed(1)}%
-                                </span>
-                              )}
-                          </span>
-                        ))}
-                        {more > 0 && <span className="chan-chip muted">+{more} more</span>}
+                {reads.length > 0 && (
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <Readings items={reads} />
+                    {byChannel.length > 1 && (
+                      <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(158px,1fr))', gap: 8 }}>
+                        {byChannel.map(c => {
+                          const pv = prevByChannel.get(c.key);
+                          const ch = changePct(c.net, pv?.net);
+                          return (
+                            <button
+                              key={c.key}
+                              className="spread"
+                              style={{
+                                border: `1px solid ${channelId === c.key ? 'var(--accent)' : 'var(--border)'}`,
+                                borderRadius: 'var(--radius-sm)',
+                                padding: '8px 11px',
+                                background: channelId === c.key ? 'var(--accent-soft)' : 'var(--surface)',
+                                cursor: 'pointer', width: '100%',
+                              }}
+                              title={`Open ${CHANNEL_BY_ID[c.key]?.name ?? c.key} in detail`}
+                              onClick={() => open({
+                                type: 'channel',
+                                label: CHANNEL_BY_ID[c.key]?.name ?? c.key,
+                                scope: { ...companyScope, channel: c.key },
+                              })}
+                            >
+                              <span className="hstack" style={{ gap: 7, minWidth: 0 }}>
+                                <span className="swatch" style={{ background: channelColor(c.key) }} />
+                                <span className="small" style={{ fontWeight: 500 }}>{CHANNEL_BY_ID[c.key]?.name ?? c.key}</span>
+                              </span>
+                              <span className="hstack" style={{ gap: 8 }}>
+                                <span className="tiny muted tnum">{money(c.net)}</span>
+                                <Delta value={ch} />
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
-
-                    {e.detail && <div className="tl-detail">{e.detail}</div>}
-
-                    <div className="tl-src" title={`${src.capture} source`}>
-                      {src.capture === 'Manual'
-                        ? <><PenLine size={10} /> Logged by {e.author ?? 'you'} in Ardent</>
-                        : <><Plug size={10} /> Captured from {src.label}</>}
-                    </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
+                )}
+              </Card>
+            );
 
-      {/* Where these numbers come from */}
-      <Card
-        title="Data sources"
-        subtitle="Where these numbers come from"
-        actions={<Link to="/sources" className="linkish">Manage <ArrowRight size={13} /></Link>}
-      >
-        <div className="vstack" style={{ gap: 2 }}>
-          {sources.map(s => {
-            const st = SOURCE_STATUS[s.status];
+          case 'financials':
+            // Only what orders can answer is a figure.
             return (
-              <div className="spread" key={s.id} style={{ padding: '6px 0' }}>
-                <span className="hstack" style={{ gap: 8, minWidth: 0 }}>
-                  <span className={`dot ${st.tone}`} />
-                  <span className="small" style={{ fontWeight: 500 }}>{s.name}</span>
-                  <span className="tiny muted">{s.kind}</span>
-                </span>
-                <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
-                  {s.lastSync ? relativeTime(s.lastSync) : 'never synced'}
-                </span>
+              <div key={id}>
+                <div className="spread" style={{ alignItems: 'baseline', marginBottom: 10 }}>
+                  <span className="section-title" style={{ marginBottom: 0 }}>
+                    Financial position{channelFiltered ? ` — ${channelName} only` : ''}
+                  </span>
+                  <Link to="/finance" className="linkish">Finance module <ArrowRight size={13} /></Link>
+                </div>
+                <div className="fin-grid">
+                  <FinancialFigure label="Gross Sales" value={money(fin.grossSales)} sub="before deductions" />
+                  <FinancialFigure
+                    label="Net Sales" value={money(fin.netSales)}
+                    sub="after returns, cancellations and discounts"
+                    onClick={() => open({ type: 'metric', label: 'Net Sales', metric: 'netSales', scope })}
+                  />
+                  <FinancialFigure
+                    label="Cost of Goods"
+                    value={fin.costComplete ? money(fin.cogs) : 'Not connected'}
+                    sub={fin.costComplete ? 'from your product unit costs' : 'needs a unit cost on every product'}
+                  />
+                  <FinancialFigure
+                    label="Gross Margin"
+                    value={fin.costComplete ? money(fin.grossProfit) : 'Not connected'}
+                    sub={fin.costComplete ? pct(fin.grossMarginPct) : 'needs cost of goods'}
+                    tone={fin.costComplete && fin.grossProfit < 0 ? 'critical' : undefined}
+                  />
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <NotConnected
+                    title="Cash, runway, receivables, payables and net margin"
+                    needs="bank statements and accounting"
+                  >
+                    Order data cannot answer these. They stay blank rather than being modelled from an
+                    assumed cost base.
+                  </NotConnected>
+                </div>
               </div>
             );
-          })}
-          {!avail.cogs && (
-            <div className="tiny muted" style={{ paddingTop: 8, lineHeight: 1.55 }}>
-              {avail.cogsPartial
-                ? 'Some sold units have no unit cost, so cost of goods and margin are withheld until every one is costed.'
-                : 'No unit costs found on your products, so cost of goods and margin cannot be computed.'}
-            </div>
-          )}
-        </div>
-      </Card>
+
+          case 'health':
+            // Unscored dimensions say so and are left out.
+            return (
+              <Card
+                key={id}
+                className="health-card"
+                title="Company Health"
+                subtitle={channelFiltered
+                  ? 'Based on your 5 key business indicators · always company-wide'
+                  : 'Based on your 5 key business indicators'}
+                actions={
+                  <button className="linkish" onClick={() => setShowHealth(true)}>
+                    <Sliders size={13} /> View health breakdown <ArrowRight size={13} />
+                  </button>
+                }
+              >
+                <div className="health compact">
+                  <div className="health-score">
+                    {health.overall == null ? (
+                      <div className="health-empty">
+                        <span className="small" style={{ fontWeight: 600 }}>No score yet</span>
+                        <span className="tiny muted">None of your five indicators can be measured</span>
+                      </div>
+                    ) : (
+                      <>
+                        <HealthGauge score={health.overall} tone={band.tone} size={88} />
+                        <Pill tone={band.tone}>{band.label}</Pill>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="health-rows">
+                    {health.dimensions.map(d => {
+                      const s = health.scores[d.id];
+                      return (
+                        <div className="health-row" key={d.id} title={`${d.question} · ${d.basis}`}>
+                          <span className="nm">{d.label}</span>
+                          {s == null
+                            ? <span className="health-na">Not connected — needs {d.needs}</span>
+                            : <Track value={s} tone={indicatorTone(s)} />}
+                          <span className="sc tnum">{s == null ? '—' : s}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {health.scoredCount > 0 && health.unavailable.length > 0 && (
+                  <div className="ladder-foot">
+                    Scored on {health.scoredCount} of {health.dimensions.length} indicators. The rest need
+                    sources that are not connected, and are left out of the overall score rather than
+                    counted as zero.
+                  </div>
+                )}
+              </Card>
+            );
+
+          case 'goals':
+            return (
+              <Card
+                key={id}
+                title="Goals & targets"
+                subtitle={liveGoals.length
+                  ? `${liveGoals.filter(g => g.status.id === 'ontrack' || g.status.id === 'achieved').length} of ${liveGoals.length} on track`
+                  : 'Nothing set yet'}
+                actions={<Link to="/goals" className="linkish">All goals <ArrowRight size={13} /></Link>}
+              >
+                {liveGoals.length === 0 ? (
+                  <Empty title="No goals yet">Set a target on the Goals page to track progress against it.</Empty>
+                ) : (
+                  <div className="vstack" style={{ gap: 14 }}>
+                    {liveGoals.slice(0, 4).map(g => (
+                      <div key={g.id}>
+                        <div className="spread" style={{ marginBottom: 5 }}>
+                          <span className="small" style={{ fontWeight: 500 }}>{g.name}</span>
+                          <Pill tone={g.status.tone}>{g.status.label}</Pill>
+                        </div>
+                        <Track value={g.progress} tone={g.status.tone} markerAt={100} />
+                        <div className="spread tiny muted" style={{ marginTop: 4 }}>
+                          <span className="tnum">
+                            {g.current == null ? 'not measurable' : g.isPct ? pct(g.current) : money(g.current)}
+                            {g.target != null && ` / ${g.isPct ? pct(g.target) : money(g.target)}`}
+                          </span>
+                          {g.forecast != null && (
+                            <span className="tnum">Forecast {g.isPct ? pct(g.forecast) : money(g.forecast)}</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            );
+
+          case 'timeline':
+            return (
+              <Card
+                key={id}
+                title="Business timeline"
+                subtitle="Channel impact is revenue 7 days from the event vs the 7 before"
+                actions={<Link to="/goals#timeline" className="linkish">Manage <ArrowRight size={13} /></Link>}
+              >
+                {timeline.length === 0 ? (
+                  <Empty title="No events logged">Mark launches, price changes and campaigns to give the numbers context.</Empty>
+                ) : (
+                  <div className="tl">
+                    {timeline.slice(-6).reverse().map(e => {
+                      const kind = EVENT_KINDS[e.kind] ?? EVENT_KINDS.business;
+                      const src = EVENT_SOURCES[e.source] ?? EVENT_SOURCES.manual;
+                      const { shown: impacts, more } = channelImpacts(e, 3);
+                      return (
+                        <div className="tl-item" key={e.id}>
+                          <span className="tl-dot" style={{
+                            background: `var(--${kind.tone === 'good' ? 'good' : kind.tone === 'warning' ? 'warning' : kind.tone === 'serious' ? 'serious' : kind.tone === 'neutral' ? 'ink-3' : 'accent'})`,
+                          }} />
+
+                          <div className="tl-meta">
+                            <Pill tone={kind.tone === 'neutral' ? 'neutral' : kind.tone} icon={false}>{kind.label}</Pill>
+                            <span className="tl-date">{fmtDate(e.date + 'T12:00:00', 'long')}</span>
+                          </div>
+
+                          <div className="tl-title">{e.title}</div>
+
+                          {impacts.length > 0 && (
+                            <div className="tl-chans" title="Average daily revenue in the 7 days from this date, against the 7 days before">
+                              {impacts.map(c => (
+                                <span className="chan-chip" key={c.key}>
+                                  <span className="swatch" style={{ background: c.color }} />
+                                  {c.name}
+                                  {c.changePct == null
+                                    ? <span className="chip-delta flat">n/a</span>
+                                    : (
+                                      <span className={`chip-delta ${c.changePct >= 0 ? 'up' : 'down'}`}>
+                                        {c.changePct >= 0 ? '+' : '−'}{Math.abs(c.changePct).toFixed(1)}%
+                                      </span>
+                                    )}
+                                </span>
+                              ))}
+                              {more > 0 && <span className="chan-chip muted">+{more} more</span>}
+                            </div>
+                          )}
+
+                          {e.detail && <div className="tl-detail">{e.detail}</div>}
+
+                          <div className="tl-src" title={`${src.capture} source`}>
+                            {src.capture === 'Manual'
+                              ? <><PenLine size={10} /> Logged by {e.author ?? 'you'} in Ardent</>
+                              : <><Plug size={10} /> Captured from {src.label}</>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
+            );
+
+          case 'sources':
+            return (
+              <Card
+                key={id}
+                title="Data sources"
+                subtitle="Where these numbers come from"
+                actions={<Link to="/sources" className="linkish">Manage <ArrowRight size={13} /></Link>}
+              >
+                <div className="vstack" style={{ gap: 2 }}>
+                  {sources.map(s => {
+                    const st = SOURCE_STATUS[s.status];
+                    return (
+                      <div className="spread" key={s.id} style={{ padding: '6px 0' }}>
+                        <span className="hstack" style={{ gap: 8, minWidth: 0 }}>
+                          <span className={`dot ${st.tone}`} />
+                          <span className="small" style={{ fontWeight: 500 }}>{s.name}</span>
+                          <span className="tiny muted">{s.kind}</span>
+                        </span>
+                        <span className="tiny muted" style={{ whiteSpace: 'nowrap' }}>
+                          {s.lastSync ? relativeTime(s.lastSync) : 'never synced'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {!avail.cogs && (
+                    <div className="tiny muted" style={{ paddingTop: 8, lineHeight: 1.55 }}>
+                      {avail.cogsPartial
+                        ? 'Some sold units have no unit cost, so cost of goods and margin are withheld until every one is costed.'
+                        : 'No unit costs found on your products, so cost of goods and margin cannot be computed.'}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            );
+
+          default:
+            return null;
+        }
+      })}
 
       {showHealth && <HealthModal health={health} onClose={() => setShowHealth(false)} />}
     </div>

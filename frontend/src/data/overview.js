@@ -13,6 +13,92 @@ import { PRODUCT_BY_ID, CHANNEL_BY_ID, productForVariant, variantById } from './
 import { eventChannels, EVENT_KINDS, eventImpact } from './business.js';
 import { fmtDate } from '../lib/format.js';
 
+/* ── A customisable Overview ───────────────────────────────────────────────
+ *
+ * A CEO and a CFO read this page differently — one wants growth and the
+ * revenue story up top, the other wants margin and the financial position.
+ * Rather than pick a single fixed layout, the page is a set of named
+ * sections and a set of headline metrics, both reorderable and both
+ * individually removable, chosen once in Settings and remembered per browser.
+ *
+ * Section order never changes what a section computes, only whether and
+ * where it appears — so "customise the page" can never mean "customise the
+ * numbers".
+ */
+
+export const OVERVIEW_SECTIONS = [
+  { id: 'ladder', label: 'Revenue', blurb: 'GMV stepped down to net sales, by what came off it.' },
+  { id: 'products', label: 'Product intelligence', blurb: 'What is carrying the business, what is not paying its way, and what is coming back.' },
+  { id: 'markets', label: 'Markets', blurb: 'Where the demand came from, when the store sells in more than one currency. Hidden on its own when there is only one.' },
+  { id: 'trend', label: 'GMV trend', blurb: 'GMV over time, with the business events that explain the movements.' },
+  { id: 'financials', label: 'Financial position', blurb: 'Gross sales down to gross margin, and what still needs a source.' },
+  { id: 'health', label: 'Company health', blurb: 'The indicators chosen under "View health breakdown", scored from measured ratios.' },
+  { id: 'goals', label: 'Goals & targets', blurb: 'Progress against whatever is set on the Goals page.' },
+  { id: 'timeline', label: 'Business timeline', blurb: 'Launches, price changes and campaigns, with their revenue impact.' },
+  { id: 'sources', label: 'Data sources', blurb: 'What is connected, and when each one last synced.' },
+];
+export const OVERVIEW_SECTION_BY_ID = Object.fromEntries(OVERVIEW_SECTIONS.map(s => [s.id, s]));
+export const DEFAULT_OVERVIEW_LAYOUT = OVERVIEW_SECTIONS.map(s => s.id);
+
+/** A saved layout, made safe: unknown ids dropped, new sections appended visible. */
+export function normaliseOverviewLayout(ids) {
+  const known = DEFAULT_OVERVIEW_LAYOUT;
+  const kept = (Array.isArray(ids) ? ids : []).filter(id => known.includes(id));
+  // No "missing ids get appended back": a section absent from a saved layout
+  // was deliberately removed, and re-adding it would make a removal
+  // indistinguishable from a section that simply did not exist yet. Only an
+  // empty result (corrupt storage, or every section somehow dropped) falls
+  // back to the default — never a partial one.
+  return kept.length ? kept : DEFAULT_OVERVIEW_LAYOUT;
+}
+
+/* ── The headline metric strip ───────────────────────────────────────────── */
+
+export const OVERVIEW_KPI_SLOTS = 4;
+
+export const OVERVIEW_KPIS = [
+  { id: 'growth',      label: null, fmt: 'growth', blurb: 'Net sales against the comparison period — MoM, QoQ or YoY, whichever is set.' },
+  { id: 'netSales',    label: 'Net Sales',          fmt: 'money', blurb: 'Gross sales, less cancellations, returns and discounts.' },
+  { id: 'grossSales',  label: 'Gross Sales',        fmt: 'money', blurb: 'Before any deductions.' },
+  { id: 'grossMargin', label: 'Gross Margin',       fmt: 'pct',   blurb: 'Net sales less cost of goods. Needs a unit cost on every sold product.' },
+  { id: 'orders',      label: 'Orders',             fmt: 'num',   blurb: 'Distinct orders in the period — one order with several products counts once.' },
+  { id: 'aov',         label: 'AOV',                fmt: 'money', blurb: 'Net sales per order.' },
+  { id: 'units',       label: 'Units Sold',         fmt: 'num',   blurb: 'Total quantity ordered.' },
+  { id: 'returnPct',   label: 'Return Rate',        fmt: 'pct',   blurb: 'Returned value against gross sales.' },
+  { id: 'cancelPct',   label: 'Cancellation Rate',  fmt: 'pct',   blurb: 'Cancelled value against gross sales.' },
+  { id: 'discountPct', label: 'Discount Rate',      fmt: 'pct',   blurb: 'Discount given against gross sales.' },
+];
+export const OVERVIEW_KPI_BY_ID = Object.fromEntries(OVERVIEW_KPIS.map(k => [k.id, k]));
+export const DEFAULT_OVERVIEW_KPIS = ['growth', 'netSales', 'grossMargin'];
+
+/** A saved KPI list, made safe: unknown ids dropped, capped at the strip's slots. */
+export function normaliseOverviewKpis(ids) {
+  const known = OVERVIEW_KPIS.map(k => k.id);
+  const kept = (Array.isArray(ids) ? ids : []).filter(id => known.includes(id)).slice(0, OVERVIEW_KPI_SLOTS);
+  return kept.length ? kept : DEFAULT_OVERVIEW_KPIS;
+}
+
+/**
+ * One chosen KPI's raw value, read off the same company-wide sales model the
+ * rest of the Overview uses — never recomputed, so the strip can never
+ * disagree with the cards below it. `growth` has no single source figure
+ * (it is a comparison, not a balance), so it is read separately by the page.
+ */
+export function overviewKpiValue(id, m) {
+  switch (id) {
+    case 'netSales':    return m.netSales;
+    case 'grossSales':  return m.grossSales;
+    case 'grossMargin': return m.costComplete ? m.grossMarginPct : null;
+    case 'orders':       return m.orders;
+    case 'aov':          return m.aov;
+    case 'units':        return m.units;
+    case 'returnPct':    return m.returnPct;
+    case 'cancelPct':    return m.cancelPct;
+    case 'discountPct':  return m.discountPct;
+    default: return null;
+  }
+}
+
 /* ── GMV to realized sales ─────────────────────────────────────────────── */
 
 /**
