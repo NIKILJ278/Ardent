@@ -13,7 +13,7 @@
 import { live, subscribe } from './live.js';
 import { COMPANIES, COMPANY_BY_ID, PRODUCT_BY_ID, skusForProduct } from './catalog.js';
 import { TODAY } from '../lib/clock.js';
-import { iso, daysInclusive } from '../lib/format.js';
+import { iso, daysInclusive, fmtDate } from '../lib/format.js';
 
 export { TODAY } from '../lib/clock.js';
 
@@ -136,6 +136,36 @@ export function comparisonWindow(period, mode) {
   const end = new Date(period.start); end.setDate(end.getDate() - 1); end.setHours(23, 59, 59, 999);
   const start = new Date(end);        start.setDate(start.getDate() - days + 1); start.setHours(0, 0, 0, 0);
   return { start, end };
+}
+
+/**
+ * What a comparison control's static label can mislead about: "Previous Year"
+ * on a 4-day month-to-date period sounds like "all of last October", when the
+ * window it actually computes is the same 4 days last year — not the full
+ * month. A CEO reading a dramatic swing needs to know which one they're
+ * looking at, so a partial current month gets its label spelled out instead
+ * of the generic one, with `partial: true` so the UI can flag it.
+ *
+ * Scoped to the one case this is genuinely ambiguous for — a part-way-through
+ * current month — rather than every preset; "Previous Period" against a
+ * custom range, for instance, already names no calendar unit to be confused
+ * with.
+ */
+export function comparisonExplainer(period, mode, periodId) {
+  const fallback = comparisonLabel(mode);
+  if (mode === 'forecast' || periodId !== 'month') return { label: fallback, partial: false };
+
+  const lastOfMonth = new Date(period.end.getFullYear(), period.end.getMonth() + 1, 0).getDate();
+  if (period.end.getDate() === lastOfMonth) return { label: fallback, partial: false };
+
+  const days = daysInclusive(period.start, period.end);
+  const win = comparisonWindow(period, mode);
+  const noun = days === 1 ? 'Day' : 'Days';
+  return {
+    label: mode === 'year' ? `Same ${days} ${noun} Last Year` : `Same ${days} ${noun} Last Month`,
+    detail: `${fmtDate(win.start, 'long')} – ${fmtDate(win.end, 'long')}`,
+    partial: true,
+  };
 }
 
 // ── Aggregation ───────────────────────────────────────────────────────────

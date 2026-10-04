@@ -6,7 +6,7 @@ import { totals, series, groupBy } from './src/data/engine.js';
 import { BRAND_ID } from './fixture.js';
 import { define } from './src/data/glossary.js';
 import { computeGst, gstOn } from './src/data/gst.js';
-import { comparisonWindow } from './src/data/engine.js';
+import { comparisonWindow, comparisonExplainer } from './src/data/engine.js';
 import { daysInclusive } from './src/lib/format.js';
 import { subjectFromScope } from './src/data/watchlist.js';
 import {
@@ -88,6 +88,23 @@ const prev = comparisonWindow(thisMonth, 'previous');
 check('the previous period is the same length (4 days: 27–30 Sep)', daysInclusive(prev.start, prev.end) === 4);
 check('the previous period ends the day before the period starts', prev.end.getDate() === 30 && prev.end.getMonth() === 8);
 check('the previous period starts 27 Sep, not 26 Sep', prev.start.getDate() === 27 && prev.start.getMonth() === 8);
+
+// comparisonExplainer: "Previous Year" on 4 days of October reads as "all of
+// last October" unless the label says otherwise.
+const partialMonth = { start: new Date(2026, 9, 1), end: new Date(2026, 9, 4, 23, 59, 59, 999) };
+const wholeMonth = { start: new Date(2026, 8, 1), end: new Date(2026, 8, 30, 23, 59, 59, 999) };
+const yearInfo = comparisonExplainer(partialMonth, 'year', 'month');
+check('a partial month vs Previous Year is flagged', yearInfo.partial === true);
+check('and spelled out with the real day count', yearInfo.label === 'Same 4 Days Last Year');
+check('with the actual dates being compared, not just a word', /2025/.test(yearInfo.detail));
+const prevInfo = comparisonExplainer(partialMonth, 'previous', 'month');
+check('the same applies to "Previous Period"', prevInfo.partial === true && prevInfo.label === 'Same 4 Days Last Month');
+check('a whole month is not flagged — the label already means what it says', comparisonExplainer(wholeMonth, 'year', 'month').partial === false);
+check('a non-month preset is left alone — "Previous Period" against a week or a custom range names no calendar unit to contradict',
+  comparisonExplainer(partialMonth, 'year', 'week').partial === false);
+check('a forecast is never flagged as partial', comparisonExplainer(partialMonth, 'forecast', 'month').partial === false);
+check('singular day count reads as "Day", not "Days"',
+  comparisonExplainer({ start: new Date(2026, 9, 1), end: new Date(2026, 9, 1, 23, 59, 59, 999) }, 'year', 'month').label === 'Same 1 Day Last Year');
 
 // subjectFromScope: a query scope (…variant) read back as a WatchButton
 // subject (…sku) — a chart or table already filtered to some scope can offer

@@ -9,7 +9,7 @@ import { useSession } from '../state/Session.jsx';
 import { useDrill } from '../state/Drilldown.jsx';
 import {
   financials, salesModel, groupBy, healthBand, indicatorTone,
-  COMPANY_BY_ID, comparisonLabel, businessPhase, growthTone,
+  COMPANY_BY_ID, comparisonLabel, comparisonExplainer, businessPhase, growthTone,
 } from '../data/engine.js';
 import { companyHealth } from '../data/health.js';
 import {
@@ -208,6 +208,10 @@ function Dashboard() {
     [coGrowth, coFin.runwayMonths, coFin.netMarginPct]
   );
 
+  // "Previous Year" on 4 days of October reads as "all of last October" —
+  // spelled out and flagged so a dramatic swing isn't read as more than it is.
+  const compareInfo = comparisonExplainer(period, comparison, periodId);
+
   // Only call it month-on-month when that is genuinely what is being compared.
   const growthLabel =
     comparison === 'year' ? 'YoY Growth'
@@ -358,7 +362,11 @@ function Dashboard() {
                 <RevenueTrend
                   data={gmv}
                   height={288}
-                  compareLabel={comparisonLabel(comparison)}
+                  // The rolling trailing-months view (gmv.rolling) always compares
+                  // whole months against whole months regardless of how little of
+                  // the current one has elapsed — the "partial period" caveat only
+                  // applies when the chart is actually plotting the raw period.
+                  compareLabel={gmv.rolling ? comparisonLabel(comparison) : compareInfo.label}
                   watchSubject={subjectFromScope(scope)}
                   markers={gmvMarkers}
                 />

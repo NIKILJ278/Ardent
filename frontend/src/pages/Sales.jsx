@@ -5,7 +5,7 @@ import { useApp } from '../state/AppState.jsx';
 import { useDrill } from '../state/Drilldown.jsx';
 import {
   salesModel, groupBy, series, skuBreakdown, forecastFor,
-  comparisonLabel, isHistoricalComparison,
+  comparisonExplainer, isHistoricalComparison,
 } from '../data/engine.js';
 import { salesFlags, worstFlag } from '../data/salesFlags.js';
 import { PERM } from '../state/permissions.js';
@@ -74,7 +74,7 @@ function NoSalesYet() {
 
 export default function Sales() {
   const { scope, prevScope, companyScope, companyId, channelId, setChannelId,
-          comparison, period, can, events, notes, goals, dataVersion } = useApp();
+          comparison, period, periodId, can, events, notes, goals, dataVersion } = useApp();
   const { open } = useDrill();
   const [tab, setTab] = useState('performance');
   const [grain, setGrain] = useState('day');
@@ -262,7 +262,7 @@ export default function Sales() {
           value={grain} onChange={setGrain} size="sm" />
       }>
         <RevenueTrend data={trend} height={230} markers={markers}
-          compareLabel={comparisonLabel(comparison)} watchSubject={subjectFromScope(drillScope)} />
+          compareLabel={comparisonExplainer(period, comparison, periodId).label} watchSubject={subjectFromScope(drillScope)} />
       </Card>
 
       {/* Sections */}

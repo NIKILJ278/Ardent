@@ -5,11 +5,12 @@ import {
   CircleHelp, Scale, Boxes, UserRound, Megaphone, Sparkles, Plug,
   PanelLeftClose, PanelLeft, Menu, Sun, Moon, Bell, ChevronDown, Check,
   Download, Calendar, Building2, Store, Barcode, Receipt, Eye, LogOut,
+  AlertTriangle,
 } from 'lucide-react';
 import { useApp } from '../../state/AppState.jsx';
 import { useSession } from '../../state/Session.jsx';
 import { CHANNELS, CHANNEL_BY_ID, COMPANY_BY_ID, channelsFor } from '../../data/catalog.js';
-import { PERIOD_PRESETS, COMPARISON_MODES, DATA_RANGE } from '../../data/engine.js';
+import { PERIOD_PRESETS, COMPARISON_MODES, DATA_RANGE, comparisonExplainer } from '../../data/engine.js';
 import { QUICK_EXPORTS, buildExport, canExport } from '../../data/exports.js';
 import { live } from '../../data/live.js';
 import { exportCsv, exportMeta } from '../../lib/csv.js';
@@ -17,7 +18,7 @@ import { channelColor } from '../../lib/channels.js';
 import { Popover } from '../ui/index.jsx';
 import { DatePanel } from './DateRangePicker.jsx';
 import { ROLES, PERM } from '../../state/permissions.js';
-import { fmtDate, iso, periodRange, num, relativeTime } from '../../lib/format.js';
+import { fmtDate, iso, periodRange, num, relativeTime, daysInclusive } from '../../lib/format.js';
 
 const NAV = [
   { group: null, items: [{ to: '/overview', icon: LayoutGrid, label: 'Overview' }] },
@@ -238,6 +239,10 @@ function PeriodPicker() {
   // Bounded to what the synced orders cover, read at render so it follows syncs.
   const minDate = DATA_RANGE.start ? iso(DATA_RANGE.start) : undefined;
 
+  // "Previous Year" on 4 days of October reads as "all of last October" —
+  // spelled out and flagged so a dramatic swing isn't read as more than it is.
+  const compareInfo = comparisonExplainer(period, comparison, periodId);
+
   return (
     <div className="hstack" style={{ gap: 6 }}>
       <Popover
@@ -265,11 +270,13 @@ function PeriodPicker() {
       </Popover>
 
       <Popover
-        width={220}
+        width={260}
         trigger={({ toggle }) => (
           <button className="btn" onClick={toggle} title="Comparison basis">
-            <span className="muted" style={{ fontSize: 12 }}>vs</span>
-            <span>{COMPARISON_MODES.find(m => m.id === comparison)?.label}</span>
+            {compareInfo.partial
+              ? <AlertTriangle size={13} style={{ color: 'var(--warning-ink)' }} />
+              : <span className="muted" style={{ fontSize: 12 }}>vs</span>}
+            <span>{compareInfo.label}</span>
             <ChevronDown size={13} style={{ opacity: 0.6 }} />
           </button>
         )}
@@ -277,12 +284,33 @@ function PeriodPicker() {
         {({ close }) => (
           <>
             <div className="pop-label">Compare against</div>
-            {COMPARISON_MODES.map(m => (
-              <button key={m.id} className={`pop-item${comparison === m.id ? ' on' : ''}`} onClick={() => { setComparison(m.id); close(); }}>
-                <span style={{ flex: 1 }}>{m.label}</span>
-                {comparison === m.id && <Check size={14} />}
-              </button>
-            ))}
+            {COMPARISON_MODES.map(m => {
+              // Each option's own explicit label, not just the active one's —
+              // "Previous Year" needs the same caveat before it is picked.
+              const info = comparisonExplainer(period, m.id, periodId);
+              return (
+                <button key={m.id} className={`pop-item${comparison === m.id ? ' on' : ''}`} onClick={() => { setComparison(m.id); close(); }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block' }}>{info.label}</span>
+                    {info.detail && <span className="tiny muted" style={{ display: 'block' }}>{info.detail}</span>}
+                  </span>
+                  {comparison === m.id && <Check size={14} />}
+                </button>
+              );
+            })}
+            {compareInfo.partial && (
+              <div className="tiny" style={{
+                display: 'flex', gap: 7, alignItems: 'flex-start', margin: '6px 2px 2px',
+                padding: '8px 9px', borderRadius: 'var(--radius-sm)',
+                background: 'var(--warning-soft)', color: 'var(--warning-ink)',
+              }}>
+                <AlertTriangle size={13} style={{ flex: 'none', marginTop: 1 }} />
+                <span>
+                  {periodLabel} is only {daysInclusive(period.start, period.end)} day{daysInclusive(period.start, period.end) === 1 ? '' : 's'} into
+                  the month — this compares against the same {daysInclusive(period.start, period.end)} days, not the full month.
+                </span>
+              </div>
+            )}
           </>
         )}
       </Popover>

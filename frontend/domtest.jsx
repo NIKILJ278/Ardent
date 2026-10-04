@@ -677,5 +677,42 @@ console.log('\n  — unexplained movements collapse into one prompt —');
   m3.unmount();
 }
 
+/* ── 11. The comparison picker spells out what it actually compares ─────── */
+
+console.log('\n  — comparison picker explains itself —');
+{
+  const { PeriodPicker } = await import('./src/components/shell/Shell.jsx');
+  dom.window.localStorage.clear();
+  localStorage.setItem('ardent.brand', BRAND_ID);
+  seedLive();
+
+  const m = mount(app(<PeriodPicker />));
+  const compareBtn = [...document.querySelectorAll('button')].find(b => b.getAttribute('title') === 'Comparison basis');
+  click(compareBtn);
+
+  const rows = [...document.querySelectorAll('.pop-item')];
+  check(rows.length === 3, `all three comparison options are listed (${rows.length})`);
+  // Forecast is a projection, not a historical window, so it carries no date
+  // range to show — only the two real comparisons (previous, year) do.
+  check(rows.slice(0, 2).every(r => /\d{4}/.test(r.textContent)),
+    'each historical option shows the actual dates it would compare, not just a name');
+
+  // Pick "Previous Year" — the middle option, by COMPARISON_MODES' own order —
+  // regardless of what today happens to be, so the test does not depend on
+  // which day of the month it runs.
+  click(rows[1]);
+  const label = compareBtn.textContent.trim();
+  const partial = label.startsWith('Same');
+  if (partial) {
+    check(!!compareBtn.querySelector('svg'), 'a partial-month comparison shows a warning icon, not just "vs"');
+    click(compareBtn); // reopen — it closed on selection
+    check(document.body.textContent.includes('compares against the same'),
+      'and explains why, in plain language, before anything is misread');
+  } else {
+    check(label === 'Previous Year', `a whole month keeps its plain label ("${label}")`);
+  }
+  m.unmount();
+}
+
 console.log(failed === 0 ? '\n  DOM tests passed.\n' : `\n  ${failed} DOM failure(s).\n`);
 process.exit(failed ? 1 : 0);
