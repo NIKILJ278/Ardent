@@ -334,6 +334,16 @@ console.log('\n  — company health indicators —');
     .map(n => n.textContent.trim()).filter(t => t !== '—');
   check(scored.length === 1, `only the measurable indicator carries a score (${scored.join(', ')})`);
 
+  // A score built from 1 of 5 indicators must not be presented with the same
+  // confidence as a complete one — no "Stable"/"Healthy"/etc, and it says so.
+  const healthPill = card.querySelector('.health-score .pill');
+  check(healthPill?.textContent.trim() === 'Incomplete',
+    `an incomplete score reads "Incomplete", not a health judgement (got "${healthPill?.textContent.trim()}")`);
+  check(!['Healthy', 'Stable', 'Needs Attention', 'Critical'].includes(healthPill?.textContent.trim()),
+    'none of the qualitative bands are claimed from partial data');
+  check(card.textContent.includes('Scored on 1 of 5 indicators'),
+    'and the card states exactly how partial it is');
+
   // Open the breakdown.
   const link = [...document.querySelectorAll('.health-card button')]
     .find(b => b.textContent.includes('View health breakdown'));

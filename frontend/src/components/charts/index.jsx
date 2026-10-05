@@ -292,7 +292,8 @@ export function HealthGauge({ score, tone = 'good', size = 132 }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(100, score)) / 100;
-  const colorVar = `var(--${tone === 'good' ? 'good' : tone === 'warning' ? 'warning' : tone === 'serious' ? 'serious' : 'critical'})`;
+  const colorVar = tone === 'good' ? 'var(--good)' : tone === 'warning' ? 'var(--warning)'
+    : tone === 'serious' ? 'var(--serious)' : tone === 'neutral' ? 'var(--ink-3)' : 'var(--critical)';
 
   return (
     <div className="gauge" style={{ width: size, height: size }}>

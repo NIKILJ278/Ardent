@@ -65,7 +65,11 @@ export const OVERVIEW_KPIS = [
   { id: 'discountPct', label: 'Discount Rate',      fmt: 'pct',   blurb: 'Discount given against gross sales.' },
 ];
 export const OVERVIEW_KPI_BY_ID = Object.fromEntries(OVERVIEW_KPIS.map(k => [k.id, k]));
-export const DEFAULT_OVERVIEW_KPIS = ['growth', 'netSales', 'grossMargin'];
+// Net Sales is deliberately not a default: the revenue ladder immediately
+// below already shows it twice (the anchor strip and the ladder's own
+// subtotal row) — a third copy in the banner would be the same number shown
+// a third time, not a third thing worth knowing.
+export const DEFAULT_OVERVIEW_KPIS = ['growth', 'orders', 'grossMargin'];
 
 /** A saved KPI list, made safe: unknown ids dropped, capped at the strip's slots. */
 export function normaliseOverviewKpis(ids) {

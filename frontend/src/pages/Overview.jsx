@@ -196,6 +196,13 @@ function Dashboard() {
     [companyScope, prevCompanyScope, period, healthConfig]
   );
   const band = healthBand(health.overall);
+  // A score built from 3 of 5 indicators, renormalised to still land on a
+  // 0–100 scale, looks exactly like a complete one — "72" and a confident
+  // "Stable" either way. Whatever it is scored from is real, but calling it
+  // Stable claims a judgement about the whole business from part of the
+  // picture, so that judgement is withheld rather than shown as though
+  // nothing were missing.
+  const healthIncomplete = health.overall != null && health.scoredCount < health.dimensions.length;
   const channelFiltered = channelId !== 'all';
 
   const coGrowth = changePct(coFin.netSales, coPrevFin.netSales);
@@ -442,8 +449,10 @@ function Dashboard() {
                       </div>
                     ) : (
                       <>
-                        <HealthGauge score={health.overall} tone={band.tone} size={88} />
-                        <Pill tone={band.tone}>{band.label}</Pill>
+                        <HealthGauge score={health.overall} tone={healthIncomplete ? 'neutral' : band.tone} size={88} />
+                        <Pill tone={healthIncomplete ? 'neutral' : band.tone}>
+                          {healthIncomplete ? 'Incomplete' : band.label}
+                        </Pill>
                       </>
                     )}
                   </div>
